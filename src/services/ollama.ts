@@ -3,6 +3,7 @@ import { StrategyRunOutputType } from '../schema';
 
 const DEFAULT_OLLAMA_HOST = 'https://hackathon.journeesdecouverte.fr/ollama';
 const OLLAMA_URL_KEY = 'ollama_custom_url';
+const OLLAMA_MODEL_KEY = 'ollama_selected_model';
 
 export const ollama = new Ollama({ 
   host: getOllamaHost() 
@@ -62,16 +63,67 @@ export function isUsingDefaultHost(): boolean {
   return currentHost === DEFAULT_OLLAMA_HOST;
 }
 
+export function getSelectedModel(): string | null {
+  try {
+    return localStorage.getItem(OLLAMA_MODEL_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setSelectedModel(model: string): void {
+  try {
+    localStorage.setItem(OLLAMA_MODEL_KEY, model);
+    // Clear cached model to force using the selected one
+    cachedAvailableModel = model;
+  } catch (error) {
+    console.error('Error setting selected model:', error);
+  }
+}
+
+export function clearSelectedModel(): void {
+  try {
+    localStorage.removeItem(OLLAMA_MODEL_KEY);
+    cachedAvailableModel = null;
+  } catch (error) {
+    console.error('Error clearing selected model:', error);
+  }
+}
+
+export function isUsingDefaultModel(): boolean {
+  return !getSelectedModel();
+}
+
+export function getDefaultModel(): string {
+  return PREFERRED_MODELS[0];
+}
+
 export class OllamaService {
   static async getAvailableModel(): Promise<string> {
-    // Return cached model if available
-    if (cachedAvailableModel) {
-      return cachedAvailableModel;
+    // Check if user has selected a specific model
+    const selectedModel = getSelectedModel();
+    if (selectedModel && cachedAvailableModel === selectedModel) {
+      return selectedModel;
     }
 
     try {
       const models = await this.listModels();
       const modelNames = models.map(m => m.name);
+      
+      // If user has selected a model, verify it's still available
+      if (selectedModel) {
+        const isSelectedAvailable = modelNames.some(name => 
+          name.includes(selectedModel) || name === selectedModel
+        );
+        if (isSelectedAvailable) {
+          cachedAvailableModel = selectedModel;
+          serviceUnavailable = false;
+          return selectedModel;
+        } else {
+          // Selected model is no longer available, clear it
+          clearSelectedModel();
+        }
+      }
       
       // Find the first preferred model that's available
       for (const preferredModel of PREFERRED_MODELS) {
