@@ -41,14 +41,18 @@ export async function chat(messages: ChatMessage[], model?: string, think?: bool
     if (think !== undefined) {
       chatOptions.think = think;
     } 
-    
+
     const rawResponse = await ollama.chat(chatOptions);
-    const response = think ? stripSelfRepeatingPrefix(rawResponse) : rawResponse
+
+    if (think && rawResponse?.message?.content) {
+      rawResponse.message.content = stripSelfRepeatingPrefix(rawResponse.message.content);
+    }
     
     // Reset service unavailable flag on successful response
     setServiceUnavailable(false);
     
-    return response.message.content;
+    return rawResponse.message.content;
+
   } catch (error) {
     console.error('Ollama chat error:', error);
     
