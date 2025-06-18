@@ -11,4 +11,4 @@ This repository contains a React-based chat application built with Vite.
 ./run_docker.sh
 ```
 
-The container exposes the application on `127.0.0.1:8088` and is started in daemon mode with an automatic restart policy.
+The container exposes the application on `127.0.0.1:8086` and is started in daemon mode with an automatic restart policy.
