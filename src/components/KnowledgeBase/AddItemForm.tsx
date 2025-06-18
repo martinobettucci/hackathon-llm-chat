@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Link, FileText, Download, AlertTriangle } from 'lucide-react';
+import { Link, FileText, Download, AlertTriangle, Sparkles, CheckCircle } from 'lucide-react';
 import { Button } from '../UI/Button';
 import { Input } from '../UI/Input';
+import { OllamaService } from '../../services/ollama';
 
 interface AddItemFormProps {
   onSubmit: (type: 'url' | 'text', title: string, url?: string, content?: string) => void;
@@ -14,12 +15,17 @@ export function AddItemForm({ onSubmit, onCancel }: AddItemFormProps) {
   const [url, setUrl] = useState('');
   const [content, setContent] = useState('');
   const [isFetchingUrl, setIsFetchingUrl] = useState(false);
+  const [isCleaningContent, setIsCleaningContent] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [cleaningError, setCleaningError] = useState<string | null>(null);
+  const [isContentCleaned, setIsContentCleaned] = useState(false);
 
   // Reset form when type changes
   useEffect(() => {
     setContent('');
     setFetchError(null);
+    setCleaningError(null);
+    setIsContentCleaned(false);
   }, [type]);
 
   const extractTextFromHTML = (html: string): string => {
@@ -80,6 +86,7 @@ export function AddItemForm({ onSubmit, onCancel }: AddItemFormProps) {
     
     setIsFetchingUrl(true);
     setFetchError(null);
+    setIsContentCleaned(false);
     
     try {
       // Validate URL format
@@ -159,6 +166,39 @@ export function AddItemForm({ onSubmit, onCancel }: AddItemFormProps) {
     }
   };
 
+  const handleCleanContent = async () => {
+    if (!content.trim()) return;
+    
+    setIsCleaningContent(true);
+    setCleaningError(null);
+    
+    try {
+      const cleanedContent = await OllamaService.cleanAndOrganizeContent(content.trim(), title.trim() || undefined);
+      setContent(cleanedContent);
+      setIsContentCleaned(true);
+    } catch (error) {
+      console.error('Error cleaning content:', error);
+      
+      let errorMessage = 'Failed to clean content with AI.';
+      
+      if (error instanceof Error) {
+        if (error.message.includes('Connection to AI service failed') ||
+            error.message.includes('AI service is currently unavailable') ||
+            error.message.includes('Cross-origin request blocked')) {
+          errorMessage = `AI service connection issue: ${error.message}`;
+        } else if (error.message.includes('Cannot clean empty content')) {
+          errorMessage = 'Please add some content before trying to clean it.';
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      
+      setCleaningError(errorMessage);
+    } finally {
+      setIsCleaningContent(false);
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -176,6 +216,8 @@ export function AddItemForm({ onSubmit, onCancel }: AddItemFormProps) {
     setContent('');
     setType('url');
     setFetchError(null);
+    setCleaningError(null);
+    setIsContentCleaned(false);
   };
 
   const isFormValid = () => {
@@ -185,6 +227,8 @@ export function AddItemForm({ onSubmit, onCancel }: AddItemFormProps) {
       return title.trim() && content.trim();
     }
   };
+
+  const hasContent = content.trim().length > 0;
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
@@ -262,12 +306,41 @@ export function AddItemForm({ onSubmit, onCancel }: AddItemFormProps) {
 
           {/* Content preview/edit area for URL type */}
           <div className="space-y-2">
-            <label className="block text-sm font-semibold text-transparent bg-gradient-to-r from-teal-700 to-purple-700 bg-clip-text">
-              📝 Content {content ? '(Fetched - you can edit)' : '(Optional - will be fetched from URL)'}
-            </label>
+            <div className="flex items-center justify-between">
+              <label className="block text-sm font-semibold text-transparent bg-gradient-to-r from-teal-700 to-purple-700 bg-clip-text">
+                📝 Content {content ? '(Fetched - you can edit)' : '(Optional - will be fetched from URL)'}
+              </label>
+              
+              {hasContent && (
+                <div className="flex items-center space-x-2">
+                  {isContentCleaned && (
+                    <div className="flex items-center space-x-1 text-green-600">
+                      <CheckCircle className="w-4 h-4" />
+                      <span className="text-xs font-medium">AI Cleaned</span>
+                    </div>
+                  )}
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="sm"
+                    icon={Sparkles}
+                    onClick={handleCleanContent}
+                    disabled={isCleaningContent}
+                    loading={isCleaningContent}
+                    title="Clean and organize content with AI"
+                  >
+                    {isCleaningContent ? 'Cleaning...' : '✨ Clean with AI'}
+                  </Button>
+                </div>
+              )}
+            </div>
+            
             <textarea
               value={content}
-              onChange={(e) => setContent(e.target.value)}
+              onChange={(e) => {
+                setContent(e.target.value);
+                setIsContentCleaned(false); // Reset cleaned status when manually edited
+              }}
               placeholder={content ? "Edit the fetched content..." : "Content will appear here after fetching, or you can add it manually..."}
               rows={8}
               className="
@@ -277,16 +350,57 @@ export function AddItemForm({ onSubmit, onCancel }: AddItemFormProps) {
                 transition-all duration-200 hover:shadow-md
               "
             />
+            
+            {cleaningError && (
+              <div className="bg-red-50 border-2 border-red-200 rounded-xl p-3">
+                <div className="flex items-start space-x-2">
+                  <AlertTriangle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-red-800 font-semibold text-xs">AI Cleaning Failed</p>
+                    <p className="text-red-700 text-xs mt-1">{cleaningError}</p>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       ) : (
         <div className="space-y-2">
-          <label className="block text-sm font-semibold text-transparent bg-gradient-to-r from-teal-700 to-purple-700 bg-clip-text">
-            📝 Content
-          </label>
+          <div className="flex items-center justify-between">
+            <label className="block text-sm font-semibold text-transparent bg-gradient-to-r from-teal-700 to-purple-700 bg-clip-text">
+              📝 Content
+            </label>
+            
+            {hasContent && (
+              <div className="flex items-center space-x-2">
+                {isContentCleaned && (
+                  <div className="flex items-center space-x-1 text-green-600">
+                    <CheckCircle className="w-4 h-4" />
+                    <span className="text-xs font-medium">AI Cleaned</span>
+                  </div>
+                )}
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="sm"
+                  icon={Sparkles}
+                  onClick={handleCleanContent}
+                  disabled={isCleaningContent}
+                  loading={isCleaningContent}
+                  title="Clean and organize content with AI"
+                >
+                  {isCleaningContent ? 'Cleaning...' : '✨ Clean with AI'}
+                </Button>
+              </div>
+            )}
+          </div>
+          
           <textarea
             value={content}
-            onChange={(e) => setContent(e.target.value)}
+            onChange={(e) => {
+              setContent(e.target.value);
+              setIsContentCleaned(false); // Reset cleaned status when manually edited
+            }}
             placeholder="Write your amazing content here..."
             rows={8}
             required
@@ -297,6 +411,34 @@ export function AddItemForm({ onSubmit, onCancel }: AddItemFormProps) {
               transition-all duration-200 hover:shadow-md
             "
           />
+          
+          {cleaningError && (
+            <div className="bg-red-50 border-2 border-red-200 rounded-xl p-3">
+              <div className="flex items-start space-x-2">
+                <AlertTriangle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-red-800 font-semibold text-xs">AI Cleaning Failed</p>
+                  <p className="text-red-700 text-xs mt-1">{cleaningError}</p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* AI Content Cleaning Info */}
+      {hasContent && !isContentCleaned && (
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 border-2 border-blue-200">
+          <div className="flex items-start space-x-3">
+            <Sparkles className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-blue-800 font-semibold text-sm">💡 AI Content Enhancement</p>
+              <p className="text-blue-700 text-sm mt-1">
+                Click "Clean with AI" to automatically organize, format, and structure your content using AI. 
+                This will create clean Markdown with proper headers, lists, and formatting.
+              </p>
+            </div>
+          </div>
         </div>
       )}
 
@@ -306,7 +448,7 @@ export function AddItemForm({ onSubmit, onCancel }: AddItemFormProps) {
         </Button>
         <Button 
           type="submit" 
-          disabled={!isFormValid() || isFetchingUrl}
+          disabled={!isFormValid() || isFetchingUrl || isCleaningContent}
           className="px-8"
         >
           ✨ Add Item
