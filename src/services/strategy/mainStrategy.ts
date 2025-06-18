@@ -37,15 +37,11 @@ export async function runStrategy(
     taskManager.completeTask('connect', 'Connecté');
 
     // Task 2: Extract user intent from conversation history
-    console.log('🎯 [USER INTENT] Starting user intent extraction phase...');
     let extractedUserIntent = '';
     const lastUserMessage = [...history].reverse().find(msg => msg.actor === 'user');
     
     if (lastUserMessage && history.length > 2) { // Only extract intent if there's a conversation history
       taskManager.startTask('user-intent', 'Extraction de l\'intention utilisateur...');
-      
-      console.log('🎯 [USER INTENT] Conversation history detected, analyzing full context...');
-      console.log(`🎯 [USER INTENT] History length: ${history.length} messages`);
       
       try {
         // Convert history to chat messages for intent extraction
@@ -68,25 +64,13 @@ export async function runStrategy(
             };
           });
 
-        console.log('🎯 [USER INTENT] Chat history for intent extraction:');
-        chatHistory.forEach((msg, index) => {
-          const truncatedContent = msg.content.length > 100 
-            ? msg.content.substring(0, 100) + '...' 
-            : msg.content;
-          console.log(`🎯 [USER INTENT]   ${index + 1}. ${msg.role.toUpperCase()}: "${truncatedContent}"`);
-        });
-
         taskManager.updateTaskMessage('user-intent', 'Reformulation de l\'intention complète...');
         extractedUserIntent = await OllamaService.extractUserIntent(chatHistory);
-        
-        console.log('🎯 [USER INTENT] ✅ Intent extraction completed successfully');
-        console.log(`🎯 [USER INTENT] Extracted intent: "${extractedUserIntent}"`);
-        console.log(`🎯 [USER INTENT] Intent length: ${extractedUserIntent.length} characters`);
         
         taskManager.completeTask('user-intent', `Intention extraite: "${extractedUserIntent.substring(0, 50)}${extractedUserIntent.length > 50 ? '...' : ''}"`);
         
       } catch (error) {
-        console.error('🎯 [USER INTENT] ❌ Error extracting user intent:', error);
+        console.error('Error extracting user intent:', error);
         taskManager.errorTask('user-intent', 'Erreur d\'extraction d\'intention');
         
         // Fallback to the last user message
@@ -95,15 +79,10 @@ export async function runStrategy(
             .map(block => block.type === 'markdown' ? block.text : block.code)
             .join(' ');
         }
-        
-        console.log('🎯 [USER INTENT] ⚠️ Falling back to last user message as intent');
-        console.log(`🎯 [USER INTENT] Fallback intent: "${extractedUserIntent}"`);
       }
     } else if (lastUserMessage) {
       // No conversation history, use the current message directly
       taskManager.startTask('user-intent', 'Utilisation du message actuel...');
-      
-      console.log('🎯 [USER INTENT] Short conversation detected, using current message as intent');
       
       if (lastUserMessage.content.type === 'formatted') {
         extractedUserIntent = lastUserMessage.content.blocks
@@ -111,13 +90,8 @@ export async function runStrategy(
           .join(' ');
       }
       
-      console.log(`🎯 [USER INTENT] Current message intent: "${extractedUserIntent}"`);
       taskManager.completeTask('user-intent', 'Message actuel utilisé');
-    } else {
-      console.log('🎯 [USER INTENT] ⚠️ No user message found in history');
     }
-
-    console.log(`🎯 [USER INTENT] Final intent decision: "${extractedUserIntent}"`);
 
     // Task 3: Advanced reasoning decision
     taskManager.startTask('advanced-reasoning', 'Évaluation du besoin de réflexion avancée...');
@@ -134,33 +108,17 @@ export async function runStrategy(
     }
 
     // Task 4: Retrieve relevant documents from knowledge base using extracted intent
-    console.log('📚 [RAG] Starting RAG retrieval phase...');
     let augmentedContext = '';
     let ragAgentMessage: HistoryMessageType | null = null;
 
     if (extractedUserIntent && projectId) {
-      console.log('📚 [RAG] Conditions met for RAG retrieval:');
-      console.log(`📚 [RAG]   - Project ID: ${projectId}`);
-      console.log(`📚 [RAG]   - User intent: "${extractedUserIntent}"`);
-      console.log(`📚 [RAG]   - Intent length: ${extractedUserIntent.length} characters`);
-      
       const { documents, contextInfo } = await retrieveRelevantDocuments(
         extractedUserIntent, // Use extracted intent instead of just the last message
         projectId,
         taskManager
       );
 
-      console.log(`📚 [RAG] Retrieval completed: ${documents.length} documents found`);
-
       if (documents.length > 0) {
-        console.log('📚 [RAG] Found relevant documents:');
-        documents.forEach((doc, index) => {
-          console.log(`📚 [RAG]   ${index + 1}. "${doc.title}" (similarity: ${doc.similarity.toFixed(3)})`);
-          console.log(`📚 [RAG]      - Parent: ${doc.parentDocumentTitle || 'N/A'}`);
-          console.log(`📚 [RAG]      - Type: ${doc.parentDocumentType || 'N/A'}`);
-          console.log(`📚 [RAG]      - Content length: ${doc.content.length} chars`);
-        });
-        
         // Create augmented context for the LLM using chunks with hierarchical headers
         augmentedContext = documents.map(doc => {
           let chunkContext = `## ${doc.title}\n${doc.content}\n`;
@@ -172,9 +130,6 @@ export async function runStrategy(
           
           return chunkContext;
         }).join('\n');
-
-        console.log(`📚 [RAG] Generated augmented context: ${augmentedContext.length} characters`);
-        console.log('📚 [RAG] Context preview:', augmentedContext.substring(0, 200) + (augmentedContext.length > 200 ? '...' : ''));
 
         // Create enhanced agent message to inform the user about context augmentation
         const documentList = documents.map(doc => {
@@ -197,18 +152,8 @@ export async function runStrategy(
           timestamp: new Date(),
           chatId: lastUserMessage?.chatId || ''
         };
-
-        console.log('📚 [RAG] ✅ Created RAG agent message for user notification');
-      } else {
-        console.log('📚 [RAG] ⚠️ No relevant documents found above similarity threshold');
       }
-    } else {
-      console.log('📚 [RAG] ⏭️ Skipping RAG retrieval:');
-      if (!extractedUserIntent) console.log('📚 [RAG]   - No user intent extracted');
-      if (!projectId) console.log('📚 [RAG]   - No project ID provided');
     }
-
-    console.log(`📚 [RAG] Final RAG decision: ${documents?.length || 0} documents will augment the context`);
 
     // Task 5: Analyze request
     taskManager.startTask('analyze', 'Analyse de la requête...');
@@ -257,8 +202,6 @@ export async function runStrategy(
 
     // Append augmented context if available
     if (augmentedContext) {
-      console.log('📚 [RAG] Adding augmented context to system prompt');
-      
       systemPrompt += `
 
 ADDITIONAL CONTEXT FROM KNOWLEDGE BASE:
@@ -267,8 +210,6 @@ The following information has been retrieved from the user's knowledge base base
 ${augmentedContext}
 
 Use this contextual information to provide a more informed, accurate, and personalized response. When referencing information from the knowledge base, you can naturally mention the source chapter or document if it helps provide context. Prioritize information from the knowledge base when it's relevant to the user's question.`;
-    } else {
-      console.log('📚 [RAG] No augmented context to add to system prompt');
     }
 
     // Convert history to chat messages for Ollama (including agent messages)
@@ -296,10 +237,6 @@ Use this contextual information to provide a more informed, accurate, and person
       { role: 'system' as const, content: systemPrompt },
       ...chatMessages
     ];
-
-    console.log(`🎯 [STRATEGY] Final prompt contains ${messagesWithSystem.length} messages`);
-    console.log(`🎯 [STRATEGY] System prompt length: ${systemPrompt.length} characters`);
-    console.log(`🎯 [STRATEGY] Think mode activated: ${activateThinkMode}`);
 
     taskManager.completeTask('analyze', 'Requête analysée');
 
@@ -354,12 +291,10 @@ Use this contextual information to provide a more informed, accurate, and person
       (llmResponse as any).ragAgentMessage = ragAgentMessage;
     }
 
-    console.log('🎯 [STRATEGY] ✅ Strategy execution completed successfully');
-
     return llmResponse;
 
   } catch (error) {
-    console.error('🎯 [STRATEGY] ❌ Strategy execution failed:', error);
+    console.error('Strategy execution error:', error);
     
     let errorMessage = 'Une erreur inattendue s\'est produite lors du traitement de votre demande.';
     
