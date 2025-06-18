@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useMessages } from '../../hooks/useDatabase';
-import { runStrategy, StrategyStatus } from '../../services/strategyEngine';
+import { runStrategy, StrategyStatus } from '../../services/strategy';
 import { OllamaService } from '../../services/ollama';
 import { FormattedContentType, MarkdownBlockType } from '../../schema';
 import { WelcomeMessage } from './WelcomeMessage';
