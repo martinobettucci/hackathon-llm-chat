@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Server, TestTube, RotateCcw, CheckCircle, XCircle, Loader2 } from 'lucide-react';
+import { Server, TestTube, RotateCcw, CheckCircle, XCircle, Loader2, Bot, Zap } from 'lucide-react';
 import { Modal } from '../UI/Modal';
 import { Input } from '../UI/Input';
 import { Button } from '../UI/Button';
@@ -9,11 +9,16 @@ import {
   getDefaultOllamaHost, 
   setOllamaHost, 
   isUsingDefaultHost,
-  getSelectedModel,
-  setSelectedModel,
-  clearSelectedModel,
-  isUsingDefaultModel,
-  getDefaultModel,
+  getSelectedGenerationModel,
+  setSelectedGenerationModel,
+  clearSelectedGenerationModel,
+  isUsingDefaultGenerationModel,
+  getDefaultGenerationModel,
+  getSelectedEmbeddingModel,
+  setSelectedEmbeddingModel,
+  clearSelectedEmbeddingModel,
+  isUsingDefaultEmbeddingModel,
+  getDefaultEmbeddingModel,
   OllamaService 
 } from '../../services/ollama';
 
@@ -30,8 +35,10 @@ interface ConnectionTestResult {
 
 export function OllamaSettingsModal({ isOpen, onClose }: OllamaSettingsModalProps) {
   const [customUrl, setCustomUrl] = useState('');
-  const [selectedModel, setSelectedModelState] = useState<string | null>(null);
-  const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [selectedGenerationModelState, setSelectedGenerationModelState] = useState<string | null>(null);
+  const [selectedEmbeddingModelState, setSelectedEmbeddingModelState] = useState<string | null>(null);
+  const [availableGenerationModels, setAvailableGenerationModels] = useState<string[]>([]);
+  const [availableEmbeddingModels, setAvailableEmbeddingModels] = useState<string[]>([]);
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<ConnectionTestResult | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -39,12 +46,15 @@ export function OllamaSettingsModal({ isOpen, onClose }: OllamaSettingsModalProp
   useEffect(() => {
     if (isOpen) {
       const currentHost = getCurrentOllamaHost();
-      const currentModel = getSelectedModel();
+      const currentGenerationModel = getSelectedGenerationModel();
+      const currentEmbeddingModel = getSelectedEmbeddingModel();
       setCustomUrl(currentHost);
-      setSelectedModelState(currentModel);
+      setSelectedGenerationModelState(currentGenerationModel);
+      setSelectedEmbeddingModelState(currentEmbeddingModel);
       setTestResult(null);
       setHasUnsavedChanges(false);
-      setAvailableModels([]);
+      setAvailableGenerationModels([]);
+      setAvailableEmbeddingModels([]);
     }
   }, [isOpen]);
 
@@ -53,7 +63,8 @@ export function OllamaSettingsModal({ isOpen, onClose }: OllamaSettingsModalProp
     setCustomUrl(newUrl);
     setHasUnsavedChanges(newUrl !== getCurrentOllamaHost());
     setTestResult(null);
-    setAvailableModels([]);
+    setAvailableGenerationModels([]);
+    setAvailableEmbeddingModels([]);
   };
 
   const handleTestConnection = async () => {
@@ -61,7 +72,8 @@ export function OllamaSettingsModal({ isOpen, onClose }: OllamaSettingsModalProp
     
     setIsTesting(true);
     setTestResult(null);
-    setAvailableModels([]);
+    setAvailableGenerationModels([]);
+    setAvailableEmbeddingModels([]);
     
     try {
       // Temporarily set the URL for testing
@@ -72,7 +84,12 @@ export function OllamaSettingsModal({ isOpen, onClose }: OllamaSettingsModalProp
       setTestResult(result);
       
       if (result.success && result.models) {
-        setAvailableModels(result.models);
+        // Filter models for generation (all models can potentially be used for generation)
+        setAvailableGenerationModels(result.models);
+        
+        // Filter models for embedding (only specific embedding models or all models)
+        // For simplicity, we'll include all models but highlight the default embedding model
+        setAvailableEmbeddingModels(result.models);
       }
       
       // If test failed, revert to original host
@@ -87,20 +104,31 @@ export function OllamaSettingsModal({ isOpen, onClose }: OllamaSettingsModalProp
         success: false,
         message: error instanceof Error ? error.message : 'Test failed'
       });
-      setAvailableModels([]);
+      setAvailableGenerationModels([]);
+      setAvailableEmbeddingModels([]);
     } finally {
       setIsTesting(false);
     }
   };
 
-  const handleSelectModel = (model: string) => {
-    setSelectedModelState(model);
-    setSelectedModel(model);
+  const handleSelectGenerationModel = (model: string) => {
+    setSelectedGenerationModelState(model);
+    setSelectedGenerationModel(model);
   };
 
-  const handleResetModelToDefault = () => {
-    setSelectedModelState(null);
-    clearSelectedModel();
+  const handleSelectEmbeddingModel = (model: string) => {
+    setSelectedEmbeddingModelState(model);
+    setSelectedEmbeddingModel(model);
+  };
+
+  const handleResetGenerationModelToDefault = () => {
+    setSelectedGenerationModelState(null);
+    clearSelectedGenerationModel();
+  };
+
+  const handleResetEmbeddingModelToDefault = () => {
+    setSelectedEmbeddingModelState(null);
+    clearSelectedEmbeddingModel();
   };
 
   const handleSave = async () => {
@@ -122,7 +150,8 @@ export function OllamaSettingsModal({ isOpen, onClose }: OllamaSettingsModalProp
     setOllamaHost(defaultHost);
     setHasUnsavedChanges(false);
     setTestResult(null);
-    setAvailableModels([]);
+    setAvailableGenerationModels([]);
+    setAvailableEmbeddingModels([]);
   };
 
   const handleClose = () => {
@@ -171,7 +200,10 @@ export function OllamaSettingsModal({ isOpen, onClose }: OllamaSettingsModalProp
             <strong>Statut:</strong> {isUsingDefaultHost() ? 'URL par défaut' : 'URL personnalisée'}
           </p>
           <p className="text-sm text-purple-700">
-            <strong>Modèle:</strong> {selectedModel || `${getDefaultModel()} (par défaut)`}
+            <strong>Modèle de génération:</strong> {selectedGenerationModelState || `${getDefaultGenerationModel()} (par défaut)`}
+          </p>
+          <p className="text-sm text-purple-700">
+            <strong>Modèle d'embedding:</strong> {selectedEmbeddingModelState || `${getDefaultEmbeddingModel()} (par défaut)`}
           </p>
         </div>
 
@@ -230,14 +262,39 @@ export function OllamaSettingsModal({ isOpen, onClose }: OllamaSettingsModalProp
 
         {/* Model Selection */}
         {testResult?.success && (
-          <ModelSelector
-            availableModels={availableModels}
-            selectedModel={selectedModel}
-            onSelectModel={handleSelectModel}
-            onResetToDefault={handleResetModelToDefault}
-            isUsingDefault={isUsingDefaultModel()}
-            defaultModel={getDefaultModel()}
-          />
+          <div className="space-y-6">
+            {/* Generation Model Selector */}
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 border-2 border-blue-200">
+              <div className="flex items-center space-x-2 mb-4">
+                <Bot className="w-5 h-5 text-blue-600" />
+                <h4 className="font-semibold text-blue-800">🤖 Modèle de Génération</h4>
+              </div>
+              <ModelSelector
+                availableModels={availableGenerationModels}
+                selectedModel={selectedGenerationModelState}
+                onSelectModel={handleSelectGenerationModel}
+                onResetToDefault={handleResetGenerationModelToDefault}
+                isUsingDefault={isUsingDefaultGenerationModel()}
+                defaultModel={getDefaultGenerationModel()}
+              />
+            </div>
+
+            {/* Embedding Model Selector */}
+            <div className="bg-gradient-to-r from-green-50 to-teal-50 rounded-xl p-4 border-2 border-green-200">
+              <div className="flex items-center space-x-2 mb-4">
+                <Zap className="w-5 h-5 text-green-600" />
+                <h4 className="font-semibold text-green-800">⚡ Modèle d'Embedding</h4>
+              </div>
+              <ModelSelector
+                availableModels={availableEmbeddingModels}
+                selectedModel={selectedEmbeddingModelState}
+                onSelectModel={handleSelectEmbeddingModel}
+                onResetToDefault={handleResetEmbeddingModelToDefault}
+                isUsingDefault={isUsingDefaultEmbeddingModel()}
+                defaultModel={getDefaultEmbeddingModel()}
+              />
+            </div>
+          </div>
         )}
 
         {/* Information */}
@@ -245,9 +302,11 @@ export function OllamaSettingsModal({ isOpen, onClose }: OllamaSettingsModalProp
           <h4 className="font-semibold text-cyan-800 mb-2">💡 Informations</h4>
           <ul className="text-sm text-cyan-700 space-y-1">
             <li>• L'URL par défaut est : <code className="bg-cyan-100 px-1 rounded">{getDefaultOllamaHost()}</code></li>
-            <li>• Le modèle par défaut est : <code className="bg-cyan-100 px-1 rounded">{getDefaultModel()}</code></li>
+            <li>• Le modèle de génération par défaut est : <code className="bg-cyan-100 px-1 rounded">{getDefaultGenerationModel()}</code></li>
+            <li>• Le modèle d'embedding par défaut est : <code className="bg-cyan-100 px-1 rounded">{getDefaultEmbeddingModel()}</code></li>
+            <li>• Le modèle de génération est utilisé pour les conversations</li>
+            <li>• Le modèle d'embedding est utilisé pour la recherche sémantique dans la base de connaissances</li>
             <li>• Assurez-vous que votre serveur Ollama autorise les requêtes CORS</li>
-            <li>• Le serveur doit être accessible depuis votre navigateur</li>
             <li>• Testez toujours la connexion avant de sauvegarder</li>
           </ul>
         </div>

@@ -3,7 +3,8 @@ import { StrategyRunOutputType } from '../schema';
 
 const DEFAULT_OLLAMA_HOST = 'https://hackathon.journeesdecouverte.fr/ollama';
 const OLLAMA_URL_KEY = 'ollama_custom_url';
-const OLLAMA_MODEL_KEY = 'ollama_selected_model';
+const OLLAMA_GENERATION_MODEL_KEY = 'ollama_selected_generation_model';
+const OLLAMA_EMBEDDING_MODEL_KEY = 'ollama_selected_embedding_model';
 
 export const ollama = new Ollama({ 
   host: getOllamaHost() 
@@ -14,7 +15,7 @@ export interface ChatMessage {
   content: string;
 }
 
-// Preferred models in order of preference
+// Preferred models in order of preference for generation
 const PREFERRED_MODELS = [
   'gemma3:27b-it-qat'
 ];
@@ -66,49 +67,79 @@ export function isUsingDefaultHost(): boolean {
   return currentHost === DEFAULT_OLLAMA_HOST;
 }
 
-export function getSelectedModel(): string | null {
+// Generation model functions
+export function getSelectedGenerationModel(): string | null {
   try {
-    return localStorage.getItem(OLLAMA_MODEL_KEY);
+    return localStorage.getItem(OLLAMA_GENERATION_MODEL_KEY);
   } catch {
     return null;
   }
 }
 
-export function setSelectedModel(model: string): void {
+export function setSelectedGenerationModel(model: string): void {
   try {
-    localStorage.setItem(OLLAMA_MODEL_KEY, model);
+    localStorage.setItem(OLLAMA_GENERATION_MODEL_KEY, model);
     // Clear cached model to force using the selected one
     cachedAvailableModel = model;
   } catch (error) {
-    console.error('Error setting selected model:', error);
+    console.error('Error setting selected generation model:', error);
   }
 }
 
-export function clearSelectedModel(): void {
+export function clearSelectedGenerationModel(): void {
   try {
-    localStorage.removeItem(OLLAMA_MODEL_KEY);
+    localStorage.removeItem(OLLAMA_GENERATION_MODEL_KEY);
     cachedAvailableModel = null;
   } catch (error) {
-    console.error('Error clearing selected model:', error);
+    console.error('Error clearing selected generation model:', error);
   }
 }
 
-export function isUsingDefaultModel(): boolean {
-  return !getSelectedModel();
+export function isUsingDefaultGenerationModel(): boolean {
+  return !getSelectedGenerationModel();
 }
 
-export function getDefaultModel(): string {
+export function getDefaultGenerationModel(): string {
   return PREFERRED_MODELS[0];
 }
 
-export function getEmbeddingModel(): string {
+// Embedding model functions
+export function getSelectedEmbeddingModel(): string | null {
+  try {
+    return localStorage.getItem(OLLAMA_EMBEDDING_MODEL_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setSelectedEmbeddingModel(model: string): void {
+  try {
+    localStorage.setItem(OLLAMA_EMBEDDING_MODEL_KEY, model);
+  } catch (error) {
+    console.error('Error setting selected embedding model:', error);
+  }
+}
+
+export function clearSelectedEmbeddingModel(): void {
+  try {
+    localStorage.removeItem(OLLAMA_EMBEDDING_MODEL_KEY);
+  } catch (error) {
+    console.error('Error clearing selected embedding model:', error);
+  }
+}
+
+export function isUsingDefaultEmbeddingModel(): boolean {
+  return !getSelectedEmbeddingModel();
+}
+
+export function getDefaultEmbeddingModel(): string {
   return EMBEDDING_MODEL;
 }
 
 export class OllamaService {
   static async getAvailableModel(): Promise<string> {
-    // Check if user has selected a specific model
-    const selectedModel = getSelectedModel();
+    // Check if user has selected a specific generation model
+    const selectedModel = getSelectedGenerationModel();
     if (selectedModel && cachedAvailableModel === selectedModel) {
       return selectedModel;
     }
@@ -128,7 +159,7 @@ export class OllamaService {
           return selectedModel;
         } else {
           // Selected model is no longer available, clear it
-          clearSelectedModel();
+          clearSelectedGenerationModel();
         }
       }
       
@@ -164,73 +195,30 @@ export class OllamaService {
     }
   }
 
-  static async generateEmbeddings(text: string): Promise<number[]> {
-    try {
-      // Check if service was previously unavailable
-      if (serviceUnavailable) {
-        throw new Error('AI service is currently unavailable. Please try again later.');
-      }
-
-      // Ensure we have content to embed
-      if (!text || !text.trim()) {
-        throw new Error('Cannot generate embeddings for empty text');
-      }
-
-      // Clean up the text (remove excessive whitespace, normalize)
-      const cleanText = text.trim().replace(/\s+/g, ' ');
-
-      const response = await ollama.embeddings({
-        model: EMBEDDING_MODEL,
-        prompt: cleanText
-      });
-
-      // Reset service unavailable flag on successful response
-      serviceUnavailable = false;
-      
-      if (!response.embedding || !Array.isArray(response.embedding)) {
-        throw new Error('Invalid embedding response from Ollama service');
-      }
-
-      return response.embedding;
-    } catch (error) {
-      console.error('Ollama embeddings error:', error);
-      
-      if (error instanceof TypeError && error.message.includes('fetch')) {
-        serviceUnavailable = true;
-        throw new Error(`Connection to AI service failed at ${currentHost}. This appears to be a network connectivity issue. Please ensure the Ollama server is running and accessible from your browser.`);
-      }
-      
-      if (error instanceof Error) {
-        if (error.message.includes('not found')) {
-          throw new Error(`The embedding model "${EMBEDDING_MODEL}" is not available. Please ensure it's installed on the Ollama server.`);
-        }
+  static async getAvailableEmbeddingModel(): Promise<string> {
+    // Check if user has selected a specific embedding model
+    const selectedModel = getSelectedEmbeddingModel();
+    if (selectedModel) {
+      try {
+        const models = await this.listModels();
+        const modelNames = models.map(m => m.name);
         
-        if (error.message.includes('CORS')) {
-          serviceUnavailable = true;
-          throw new Error(`Cross-origin request blocked. The Ollama server at ${currentHost} needs to be configured to allow requests from this domain.`);
+        const isSelectedAvailable = modelNames.some(name => 
+          name.includes(selectedModel) || name === selectedModel
+        );
+        if (isSelectedAvailable) {
+          return selectedModel;
+        } else {
+          // Selected model is no longer available, clear it and fall back to default
+          clearSelectedEmbeddingModel();
         }
-        
-        // Re-throw our custom error messages
-        if (error.message.includes('AI service is currently unavailable') || 
-            error.message.includes('Connection to AI service failed') ||
-            error.message.includes('Cannot generate embeddings for empty text') ||
-            error.message.includes('Invalid embedding response')) {
-          throw error;
-        }
+      } catch (error) {
+        console.error('Error checking selected embedding model availability:', error);
       }
-      
-      serviceUnavailable = true;
-      throw new Error('Failed to generate embeddings. Please check your connection and try again.');
     }
-  }
-
-  static async isEmbeddingModelAvailable(): Promise<boolean> {
-    try {
-      const models = await this.listModels();
-      return models.some(m => m.name === EMBEDDING_MODEL || m.name.includes(EMBEDDING_MODEL));
-    } catch (error) {
-      return false;
-    }
+    
+    // Use default embedding model
+    return EMBEDDING_MODEL;
   }
 
   static async testConnection(): Promise<{ success: boolean; message: string; models?: string[] }> {
@@ -245,12 +233,21 @@ export class OllamaService {
         };
       }
 
-      // Check if embedding model is available
-      const hasEmbeddingModel = await this.isEmbeddingModelAvailable();
+      // Check if default models are available
+      const hasGenerationModel = modelNames.some(name => 
+        name.includes(getDefaultGenerationModel()) || name === getDefaultGenerationModel()
+      );
+      const hasEmbeddingModel = modelNames.some(name => 
+        name.includes(getDefaultEmbeddingModel()) || name === getDefaultEmbeddingModel()
+      );
+      
       let message = `Connected successfully! Found ${modelNames.length} model(s)`;
       
+      if (!hasGenerationModel) {
+        message += `. Warning: Default generation model "${getDefaultGenerationModel()}" not found.`;
+      }
       if (!hasEmbeddingModel) {
-        message += `. Warning: Embedding model "${EMBEDDING_MODEL}" not found - knowledge base features may be limited.`;
+        message += ` Warning: Default embedding model "${getDefaultEmbeddingModel()}" not found - knowledge base features may be limited.`;
       }
       
       return {
@@ -399,6 +396,70 @@ export class OllamaService {
     }
   }
 
+  static async generateEmbeddings(text: string): Promise<number[]> {
+    try {
+      // Check if service was previously unavailable
+      if (serviceUnavailable) {
+        throw new Error('AI service is currently unavailable. Please try again later.');
+      }
+
+      // Ensure we have content to embed
+      if (!text || !text.trim()) {
+        throw new Error('Cannot generate embeddings for empty text');
+      }
+
+      // Clean up the text (remove excessive whitespace, normalize)
+      const cleanText = text.trim().replace(/\s+/g, ' ');
+
+      // Use the selected embedding model or default
+      const embeddingModel = await this.getAvailableEmbeddingModel();
+
+      const response = await ollama.embeddings({
+        model: embeddingModel,
+        prompt: cleanText
+      });
+
+      // Reset service unavailable flag on successful response
+      serviceUnavailable = false;
+      
+      if (!response.embedding || !Array.isArray(response.embedding)) {
+        throw new Error('Invalid embedding response from Ollama service');
+      }
+
+      return response.embedding;
+    } catch (error) {
+      console.error('Ollama embeddings error:', error);
+      
+      if (error instanceof TypeError && error.message.includes('fetch')) {
+        serviceUnavailable = true;
+        throw new Error(`Connection to AI service failed at ${currentHost}. This appears to be a network connectivity issue. Please ensure the Ollama server is running and accessible from your browser.`);
+      }
+      
+      if (error instanceof Error) {
+        if (error.message.includes('not found')) {
+          const embeddingModel = getSelectedEmbeddingModel() || getDefaultEmbeddingModel();
+          throw new Error(`The embedding model "${embeddingModel}" is not available. Please ensure it's installed on the Ollama server.`);
+        }
+        
+        if (error.message.includes('CORS')) {
+          serviceUnavailable = true;
+          throw new Error(`Cross-origin request blocked. The Ollama server at ${currentHost} needs to be configured to allow requests from this domain.`);
+        }
+        
+        // Re-throw our custom error messages
+        if (error.message.includes('AI service is currently unavailable') || 
+            error.message.includes('Connection to AI service failed') ||
+            error.message.includes('Cannot generate embeddings for empty text') ||
+            error.message.includes('Invalid embedding response')) {
+          throw error;
+        }
+      }
+      
+      serviceUnavailable = true;
+      throw new Error('Failed to generate embeddings. Please check your connection and try again.');
+    }
+  }
+
   static async listModels() {
     try {
       const response = await ollama.list();
@@ -419,6 +480,16 @@ export class OllamaService {
     try {
       const models = await this.listModels();
       return models.some(m => m.name === model || m.name.includes(model));
+    } catch (error) {
+      return false;
+    }
+  }
+
+  static async isEmbeddingModelAvailable(): Promise<boolean> {
+    try {
+      const models = await this.listModels();
+      const embeddingModel = getSelectedEmbeddingModel() || getDefaultEmbeddingModel();
+      return models.some(m => m.name === embeddingModel || m.name.includes(embeddingModel));
     } catch (error) {
       return false;
     }

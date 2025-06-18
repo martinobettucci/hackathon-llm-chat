@@ -40,7 +40,8 @@ export interface KnowledgeBaseItem {
 
 export interface AppSettings {
   theme: 'light' | 'dark';
-  model: string;
+  selectedGenerationModel?: string;
+  selectedEmbeddingModel?: string;
   temperature: number;
   maxTokens: number;
 }

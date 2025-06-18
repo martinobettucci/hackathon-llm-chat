@@ -64,6 +64,27 @@ export class ChatDatabase extends Dexie {
       });
     });
 
+    // Version 4: Add model selection to settings
+    this.version(4).stores({
+      chats: 'id, title, projectId, createdAt, updatedAt, prefersStructured',
+      messages: 'id, chatId, actor, timestamp',
+      projects: 'id, name, createdAt, updatedAt, isDefault',
+      knowledgeBase: 'id, projectId, type, title, createdAt, embeddings',
+      settings: 'theme, selectedGenerationModel, selectedEmbeddingModel'
+    }).upgrade(trans => {
+      // Migrate existing settings to include model selection
+      return trans.table('settings').toCollection().modify((settings: any) => {
+        // Remove old 'model' field and add new separate model fields
+        if (settings.model) {
+          settings.selectedGenerationModel = settings.model;
+          delete settings.model;
+        }
+        if (!settings.selectedEmbeddingModel) {
+          settings.selectedEmbeddingModel = null; // Will use default
+        }
+      });
+    });
+
     this.on('ready', this.initializeDefaults.bind(this));
   }
 
@@ -85,7 +106,8 @@ export class ChatDatabase extends Dexie {
     if (settingsCount === 0) {
       await this.settings.add({
         theme: 'dark',
-        model: 'llama3.1',
+        selectedGenerationModel: undefined, // Will use system default
+        selectedEmbeddingModel: undefined, // Will use system default
         temperature: 0.7,
         maxTokens: 2048
       });
