@@ -77,23 +77,30 @@ export async function attemptLLMCall(
       // Start validation task
       taskManager.startTask('validate', 'Extraction JSON...');
 
+      // Log the full response for debugging
+      console.log(`[DEBUG] Full response from LLM (attempt ${attempt}):`, fullResponse);
+
       // Extract JSON content from the response
       let jsonContent: string;
       try {
         jsonContent = extractJSONFromResponse(fullResponse);
         taskManager.updateTaskMessage('validate', 'JSON extrait, validation...');
+        
+        // Log the extracted JSON for debugging
+        console.log(`[DEBUG] Extracted JSON content (attempt ${attempt}):`, jsonContent);
+        
       } catch (extractError) {
         const errorMessage = extractError instanceof Error ? extractError.message : 'Erreur d\'extraction JSON inconnue';
         
-        // Record this failed attempt
+        // Record this failed attempt with full details
         retryAttempts.push({
           attempt,
           rawResponse: fullResponse,
           error: `JSON extraction failed: ${errorMessage}`
         });
 
-        console.error(`JSON extraction error on attempt ${attempt}:`, extractError);
-        console.log(`Raw response attempt ${attempt}:`, fullResponse.substring(0, 500) + '...');
+        console.error(`[ERROR] JSON extraction error on attempt ${attempt}:`, extractError);
+        console.log(`[DEBUG] Problematic raw response (attempt ${attempt}):`, fullResponse.substring(0, 1000) + (fullResponse.length > 1000 ? '...' : ''));
 
         // Mark validation as error
         taskManager.errorTask('validate', `Extraction JSON échouée (${attempt}/${maxRetries})`);
@@ -115,21 +122,23 @@ export async function attemptLLMCall(
         // Success! Complete validation
         taskManager.completeTask('validate', 'JSON valide');
         
+        console.log(`[SUCCESS] JSON successfully parsed and validated on attempt ${attempt}`);
+        
         return { response: parsedResponse, rawResponse: fullResponse };
         
       } catch (parseError) {
         const errorMessage = parseError instanceof Error ? parseError.message : 'Erreur de parsing inconnue';
         
-        // Record this failed attempt
+        // Record this failed attempt with full details
         retryAttempts.push({
           attempt,
           rawResponse: fullResponse,
           error: `JSON parsing/validation failed: ${errorMessage}`
         });
 
-        console.error(`Parse/validation error on attempt ${attempt}:`, parseError);
-        console.log(`Extracted JSON attempt ${attempt}:`, jsonContent.substring(0, 500) + '...');
-        console.log(`Full raw response attempt ${attempt}:`, fullResponse.substring(0, 500) + '...');
+        console.error(`[ERROR] Parse/validation error on attempt ${attempt}:`, parseError);
+        console.log(`[DEBUG] Failed to parse JSON content (attempt ${attempt}):`, jsonContent);
+        console.log(`[DEBUG] Full raw response (attempt ${attempt}):`, fullResponse.substring(0, 1000) + (fullResponse.length > 1000 ? '...' : ''));
 
         // Mark validation as error
         taskManager.errorTask('validate', `Validation échouée (${attempt}/${maxRetries})`);
@@ -158,7 +167,7 @@ export async function attemptLLMCall(
         error: errorMessage
       });
 
-      console.error(`Network/service error on attempt ${attempt}:`, error);
+      console.error(`[ERROR] Network/service error on attempt ${attempt}:`, error);
 
       // Mark generation as error
       taskManager.errorTask('generate', `Erreur réseau (${attempt}/${maxRetries})`);
