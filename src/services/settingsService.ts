@@ -1,5 +1,5 @@
 const SIMILARITY_THRESHOLD_KEY = 'similarity_threshold';
-const DEFAULT_SIMILARITY_THRESHOLD = 0.7;
+const DEFAULT_SIMILARITY_THRESHOLD = 0.6;
 
 export function getSimilarityThreshold(): number {
   try {
