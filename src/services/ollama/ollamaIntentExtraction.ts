@@ -1,6 +1,6 @@
-import { ollama, getCurrentOllamaHost } from './ollamaClient';
+import { getCurrentOllamaHost } from './ollamaClient';
 import { getAvailableModel, setServiceUnavailable } from './ollamaModels';
-import { ChatMessage } from './ollamaChat';
+import { chat, ChatMessage } from './ollamaChat';
 
 export async function extractUserIntent(conversationHistory: ChatMessage[]): Promise<string> {
   try {
@@ -47,21 +47,17 @@ Your task: Analyze this conversation and extract the user's complete current int
 
     const selectedModel = await getAvailableModel();
     
-    const response = await ollama.chat({
-      model: selectedModel,
-      messages,
-      stream: false,
-      think: true               // Active le "thinking"
-    });
+    // Use centralized chat function instead of direct ollama.chat call
+    const responseContent = await chat(messages, selectedModel, true);
 
     // debug
-    console.log(JSON.stringify(response.message.content))
+    console.log(JSON.stringify(responseContent))
     
     // Reset service unavailable flag on successful response
     setServiceUnavailable(false);
     
     // Clean the response - remove any extra formatting
-    let intent = response.message.content.trim();
+    let intent = responseContent.trim();
     
     // Remove common response prefixes
     const prefixesToRemove = [

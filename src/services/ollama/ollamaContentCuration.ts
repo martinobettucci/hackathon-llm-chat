@@ -1,6 +1,6 @@
-import { ollama, getCurrentOllamaHost } from './ollamaClient';
+import { getCurrentOllamaHost } from './ollamaClient';
 import { getAvailableModel, setServiceUnavailable } from './ollamaModels';
-import { ChatMessage } from './ollamaChat';
+import { chat, ChatMessage } from './ollamaChat';
 
 export async function cleanAndOrganizeContent(
   rawContent: string, 
@@ -55,17 +55,8 @@ TITLE GUIDELINES:
 
     const selectedModel = await getAvailableModel();
     
-    const chatOptions: any = {
-      model: selectedModel,
-      messages,
-      stream: false
-    };
-
-    if (needsTitle) {
-      chatOptions.format = 'json';
-    }
-    
-    const response = await ollama.chat(chatOptions);
+    // Use centralized chat function instead of direct ollama.chat call
+    const responseContent = await chat(messages, selectedModel, false);
     
     // Reset service unavailable flag on successful response
     setServiceUnavailable(false);
@@ -75,7 +66,7 @@ TITLE GUIDELINES:
     if (needsTitle) {
       try {
         // Try to parse as JSON for title + content
-        const jsonResponse = JSON.parse(response.message.content);
+        const jsonResponse = JSON.parse(responseContent);
         
         if (jsonResponse.title && jsonResponse.content) {
           result = {
@@ -85,15 +76,15 @@ TITLE GUIDELINES:
         } else {
           // Fallback: treat as content only
           console.warn('AI response missing title or content fields, using as content only');
-          result = { content: response.message.content.trim() };
+          result = { content: responseContent.trim() };
         }
       } catch (parseError) {
         console.warn('Failed to parse AI response as JSON, treating as content only');
-        result = { content: response.message.content.trim() };
+        result = { content: responseContent.trim() };
       }
     } else {
       // Clean up the response (remove any extra formatting or explanations)
-      let cleanedContent = response.message.content.trim();
+      let cleanedContent = responseContent.trim();
       
       // Remove common AI response prefixes/suffixes
       const prefixesToRemove = [
