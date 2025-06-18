@@ -102,6 +102,11 @@ export async function runStrategy(
       taskManager
     );
 
+    // Set thinking mode in task manager when activated
+    if (activateThinkMode) {
+      taskManager.setThinkingMode(true);
+    }
+
     // Task 4: Retrieve relevant documents from knowledge base using extracted intent
     let augmentedContext = '';
     let ragAgentMessage: HistoryMessageType | null = null;
@@ -274,7 +279,7 @@ Use this contextual information to provide a more informed, accurate, and person
     if (activateThinkMode && parsedResponse.content.type === 'formatted') {
       const thinkingNotification: MarkdownBlockType = {
         type: 'markdown',
-        text: '_🧠 Mode de réflexion avancé activé._'
+        text: '_🧠 Cette réponse a été générée avec un raisonnement avancé._'
       };
       
       // Add the notification as the last block
@@ -335,5 +340,9 @@ Use this contextual information to provide a more informed, accurate, and person
       timestamp: new Date(),
       chatId: history[history.length - 1]?.chatId || ''
     };
+    
+  } finally {
+    // Always ensure thinking mode is reset
+    taskManager.setThinkingMode(false);
   }
 }

@@ -17,6 +17,7 @@ export interface StrategyStatus {
   retryAttempt?: number;
   maxRetries?: number;
   streamingProgress?: number;
+  isThinkingMode?: boolean;
 }
 
 export type StrategyStatusCallback = (status: StrategyStatus) => void;
@@ -75,6 +76,7 @@ export class StrategyTaskManager {
   ];
 
   private onStatusUpdate?: StrategyStatusCallback;
+  private _isThinkingMode: boolean = false;
 
   constructor(onStatusUpdate?: StrategyStatusCallback) {
     this.onStatusUpdate = onStatusUpdate;
@@ -132,7 +134,15 @@ export class StrategyTaskManager {
     }
   }
 
+  setThinkingMode(isThinking: boolean): void {
+    this._isThinkingMode = isThinking;
+    this.notifyUpdate();
+  }
+
   updateStreamingProgress(progress: number): void {
+    // Don't update streaming progress if in thinking mode
+    if (this._isThinkingMode) return;
+    
     const task = this.tasks.find(t => t.id === 'generate');
     if (task && task.status === 'inProgress') {
       task.message = `Streaming... ${Math.round(progress)}%`;
@@ -156,7 +166,8 @@ export class StrategyTaskManager {
         responseType,
         retryAttempt,
         maxRetries,
-        streamingProgress
+        streamingProgress,
+        isThinkingMode: this._isThinkingMode
       });
     }
   }

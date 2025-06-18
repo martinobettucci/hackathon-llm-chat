@@ -15,6 +15,9 @@ export async function attemptLLMCall(
   const maxRetries = 3;
   const retryAttempts: RetryAttempt[] = [];
 
+  // Set thinking mode in task manager
+  taskManager.setThinkingMode(activateThinkMode);
+
   for (let attempt = attemptNumber; attempt <= maxRetries; attempt++) {
     const analyzer = new StreamingJSONAnalyzer(taskManager);
     
@@ -24,45 +27,63 @@ export async function attemptLLMCall(
         taskManager.startTask('validate', `Tentative ${attempt}/${maxRetries}`);
       }
 
-      // Start generation task
+      // Start generation task with appropriate message
       const generationMessage = attempt === 1 
-        ? (activateThinkMode ? 'Génération avec réflexion avancée...' : 'Génération en cours...')
+        ? (activateThinkMode ? '🧠 Le modèle réfléchit...' : 'Génération en cours...')
         : `Tentative ${attempt}/${maxRetries}`;
       
       taskManager.startTask('generate', generationMessage);
 
       let fullResponse = '';
-      let lastUpdateTime = Date.now();
       
       try {
-        // Try streaming first
-        const stream = await OllamaService.chatStream(messagesWithSystem, undefined, activateThinkMode);
-        
-        // Start streaming analysis
-        taskManager.updateTaskMessage('generate', activateThinkMode ? 'Analyse du streaming avec réflexion...' : 'Analyse du streaming...');
-        analyzer.reset();
-        
-        for await (const part of stream) {
-          if (part.message?.content) {
-            const chunk = part.message.content;
-            fullResponse += chunk;
-            
-            // Analyze the chunk for live feedback
-            analyzer.addChunk(chunk);
-            
-            // Throttle updates to avoid spamming
-            const now = Date.now();
-            if (now - lastUpdateTime > 200) { // Update every 200ms max
-              lastUpdateTime = now;
+        // CRITICAL: If think mode is activated, DO NOT use streaming
+        if (activateThinkMode) {
+          console.log('[DEBUG] Think mode activated - using non-streaming chat');
+          
+          // Use non-streaming approach when thinking mode is active
+          taskManager.updateTaskMessage('generate', '🧠 Réflexion en cours...');
+          
+          fullResponse = await OllamaService.chat(messagesWithSystem, undefined, true);
+          
+          // Still analyze the full response for feedback
+          analyzer.reset();
+          analyzer.addChunk(fullResponse);
+          
+        } else {
+          console.log('[DEBUG] Normal mode - using streaming chat');
+          
+          // Use streaming approach when thinking mode is NOT active
+          const stream = await OllamaService.chatStream(messagesWithSystem, undefined, false);
+          
+          // Start streaming analysis
+          taskManager.updateTaskMessage('generate', 'Analyse du streaming...');
+          analyzer.reset();
+          
+          let lastUpdateTime = Date.now();
+          
+          for await (const part of stream) {
+            if (part.message?.content) {
+              const chunk = part.message.content;
+              fullResponse += chunk;
+              
+              // Analyze the chunk for live feedback
+              analyzer.addChunk(chunk);
+              
+              // Throttle updates to avoid spamming
+              const now = Date.now();
+              if (now - lastUpdateTime > 200) { // Update every 200ms max
+                lastUpdateTime = now;
+              }
             }
           }
         }
         
       } catch (streamError) {
-        console.error('Streaming error, falling back to regular chat:', streamError);
+        console.error('LLM call error, trying fallback:', streamError);
         
-        // Fallback to non-streaming approach
-        taskManager.updateTaskMessage('generate', 'Streaming échoué, mode direct...');
+        // Fallback to non-streaming approach regardless of think mode
+        taskManager.updateTaskMessage('generate', 'Erreur streaming, mode direct...');
         
         fullResponse = await OllamaService.chat(messagesWithSystem, undefined, activateThinkMode);
         
@@ -71,14 +92,18 @@ export async function attemptLLMCall(
         analyzer.addChunk(fullResponse);
       }
 
-      // Complete generation task
-      taskManager.completeTask('generate', activateThinkMode ? 'Réponse avec réflexion reçue' : 'Réponse reçue');
+      // Complete generation task with appropriate message
+      const completionMessage = activateThinkMode 
+        ? '🧠 Réflexion terminée' 
+        : 'Réponse reçue';
+      
+      taskManager.completeTask('generate', completionMessage);
 
       // Start validation task
       taskManager.startTask('validate', 'Extraction JSON...');
 
       // Log the full response for debugging
-      console.log(`[DEBUG] Full response from LLM (attempt ${attempt}):`, fullResponse);
+      console.log(`[DEBUG] Full response from LLM (attempt ${attempt}, think: ${activateThinkMode}):`, fullResponse);
 
       // Extract JSON content from the response
       let jsonContent: string;
@@ -122,7 +147,7 @@ export async function attemptLLMCall(
         // Success! Complete validation
         taskManager.completeTask('validate', 'JSON valide');
         
-        console.log(`[SUCCESS] JSON successfully parsed and validated on attempt ${attempt}`);
+        console.log(`[SUCCESS] JSON successfully parsed and validated on attempt ${attempt} (think: ${activateThinkMode})`);
         
         return { response: parsedResponse, rawResponse: fullResponse };
         
@@ -179,6 +204,10 @@ export async function attemptLLMCall(
       
       // For network errors, wait a bit before retrying
       await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+      
+    } finally {
+      // Always reset thinking mode when done (success or failure)
+      taskManager.setThinkingMode(false);
     }
   }
 
