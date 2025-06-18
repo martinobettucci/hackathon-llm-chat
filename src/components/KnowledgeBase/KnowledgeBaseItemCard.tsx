@@ -33,26 +33,26 @@ export function KnowledgeBaseItemCard({
           </div>
           
           <div className="flex-1 min-w-0">
-            <h3 className="text-lg font-bold text-gray-800 truncate mb-1">
+            <h3 className="text-lg font-bold text-gray-800 mb-1 line-clamp-2">
               {item.title}
             </h3>
             
             {item.type === 'url' && item.url && (
-              <p className="text-sm text-blue-600 truncate">
+              <p className="text-sm text-blue-600 mb-2 truncate">
                 {item.url}
               </p>
             )}
             
             {item.type === 'document' && (
-              <div className="flex items-center space-x-2 text-sm text-gray-500">
-                <span>{item.fileName}</span>
-                {item.fileSize && <span>• {formatFileSize(item.fileSize)}</span>}
+              <div className="flex items-center space-x-2 text-sm text-gray-500 mb-2">
+                <span className="truncate">{item.fileName}</span>
+                {item.fileSize && <span className="flex-shrink-0">• {formatFileSize(item.fileSize)}</span>}
               </div>
             )}
             
             {item.content && (
-              <p className="text-sm text-gray-600 mt-2 line-clamp-3">
-                {item.content.substring(0, 120)}...
+              <p className="text-sm text-gray-600 mt-2 line-clamp-3 leading-relaxed">
+                {item.content}
               </p>
             )}
             
@@ -63,7 +63,7 @@ export function KnowledgeBaseItemCard({
               
               {/* Embeddings status indicator */}
               <div className={`
-                flex items-center space-x-1 px-2 py-1 rounded-full text-xs font-medium
+                flex items-center space-x-1 px-2 py-1 rounded-full text-xs font-medium flex-shrink-0
                 ${hasEmbeddings 
                   ? 'bg-green-100 text-green-800' 
                   : hasContent 
