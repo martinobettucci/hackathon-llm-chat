@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link, FileText } from 'lucide-react';
+import { Link, FileText, CheckCircle, AlertTriangle, Zap } from 'lucide-react';
 import { KnowledgeBaseItem } from '../../types';
 import { formatFileSize } from '../../utils/formatters';
 
@@ -8,6 +8,9 @@ interface ItemPreviewContentProps {
 }
 
 export function ItemPreviewContent({ item }: ItemPreviewContentProps) {
+  const hasEmbeddings = item.embeddings && item.embeddings.length > 0;
+  const hasContent = item.content && item.content.trim().length > 0;
+
   return (
     <div className="space-y-6">
       <div className="flex items-center space-x-3 text-sm text-gray-600 bg-gradient-to-r from-purple-50 to-pink-50 p-4 rounded-xl">
@@ -17,6 +20,51 @@ export function ItemPreviewContent({ item }: ItemPreviewContentProps) {
         <span className="capitalize font-semibold">{item.type}</span>
         <span>•</span>
         <span>📅 {item.createdAt.toLocaleDateString()}</span>
+      </div>
+
+      {/* AI Embeddings Status */}
+      <div className={`
+        p-4 rounded-xl border-2 flex items-center space-x-3
+        ${hasEmbeddings 
+          ? 'bg-green-50 border-green-200' 
+          : hasContent 
+            ? 'bg-orange-50 border-orange-200' 
+            : 'bg-gray-50 border-gray-200'
+        }
+      `}>
+        {hasEmbeddings && (
+          <>
+            <CheckCircle className="w-5 h-5 text-green-600" />
+            <div>
+              <p className="font-semibold text-green-800">🤖 AI Embeddings Ready</p>
+              <p className="text-sm text-green-600">
+                Vector dimensions: {item.embeddings?.length} • This content is searchable with AI
+              </p>
+            </div>
+          </>
+        )}
+        {!hasEmbeddings && hasContent && (
+          <>
+            <AlertTriangle className="w-5 h-5 text-orange-600" />
+            <div>
+              <p className="font-semibold text-orange-800">⚠️ No AI Embeddings</p>
+              <p className="text-sm text-orange-600">
+                Content available but not yet processed for AI search
+              </p>
+            </div>
+          </>
+        )}
+        {!hasEmbeddings && !hasContent && (
+          <>
+            <AlertTriangle className="w-5 h-5 text-gray-600" />
+            <div>
+              <p className="font-semibold text-gray-800">📝 No Content</p>
+              <p className="text-sm text-gray-600">
+                Add content to enable AI search capabilities
+              </p>
+            </div>
+          </>
+        )}
       </div>
 
       {item.url && (

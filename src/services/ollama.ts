@@ -19,6 +19,9 @@ const PREFERRED_MODELS = [
   'gemma3:27b-it-qat'
 ];
 
+// Embedding model for knowledge base
+const EMBEDDING_MODEL = 'nomic-embed-text';
+
 let cachedAvailableModel: string | null = null;
 let serviceUnavailable = false;
 let currentHost: string = getOllamaHost();
@@ -98,6 +101,10 @@ export function getDefaultModel(): string {
   return PREFERRED_MODELS[0];
 }
 
+export function getEmbeddingModel(): string {
+  return EMBEDDING_MODEL;
+}
+
 export class OllamaService {
   static async getAvailableModel(): Promise<string> {
     // Check if user has selected a specific model
@@ -157,6 +164,75 @@ export class OllamaService {
     }
   }
 
+  static async generateEmbeddings(text: string): Promise<number[]> {
+    try {
+      // Check if service was previously unavailable
+      if (serviceUnavailable) {
+        throw new Error('AI service is currently unavailable. Please try again later.');
+      }
+
+      // Ensure we have content to embed
+      if (!text || !text.trim()) {
+        throw new Error('Cannot generate embeddings for empty text');
+      }
+
+      // Clean up the text (remove excessive whitespace, normalize)
+      const cleanText = text.trim().replace(/\s+/g, ' ');
+
+      const response = await ollama.embeddings({
+        model: EMBEDDING_MODEL,
+        prompt: cleanText
+      });
+
+      // Reset service unavailable flag on successful response
+      serviceUnavailable = false;
+      
+      if (!response.embedding || !Array.isArray(response.embedding)) {
+        throw new Error('Invalid embedding response from Ollama service');
+      }
+
+      return response.embedding;
+    } catch (error) {
+      console.error('Ollama embeddings error:', error);
+      
+      if (error instanceof TypeError && error.message.includes('fetch')) {
+        serviceUnavailable = true;
+        throw new Error(`Connection to AI service failed at ${currentHost}. This appears to be a network connectivity issue. Please ensure the Ollama server is running and accessible from your browser.`);
+      }
+      
+      if (error instanceof Error) {
+        if (error.message.includes('not found')) {
+          throw new Error(`The embedding model "${EMBEDDING_MODEL}" is not available. Please ensure it's installed on the Ollama server.`);
+        }
+        
+        if (error.message.includes('CORS')) {
+          serviceUnavailable = true;
+          throw new Error(`Cross-origin request blocked. The Ollama server at ${currentHost} needs to be configured to allow requests from this domain.`);
+        }
+        
+        // Re-throw our custom error messages
+        if (error.message.includes('AI service is currently unavailable') || 
+            error.message.includes('Connection to AI service failed') ||
+            error.message.includes('Cannot generate embeddings for empty text') ||
+            error.message.includes('Invalid embedding response')) {
+          throw error;
+        }
+      }
+      
+      serviceUnavailable = true;
+      throw new Error('Failed to generate embeddings. Please check your connection and try again.');
+    }
+  }
+
+  static async isEmbeddingModelAvailable(): Promise<boolean> {
+    try {
+      const models = await this.listModels();
+      return models.some(m => m.name === EMBEDDING_MODEL || m.name.includes(EMBEDDING_MODEL));
+    } catch (error) {
+      return false;
+    }
+  }
+
   static async testConnection(): Promise<{ success: boolean; message: string; models?: string[] }> {
     try {
       const models = await this.listModels();
@@ -168,10 +244,18 @@ export class OllamaService {
           message: 'Connected but no models available'
         };
       }
+
+      // Check if embedding model is available
+      const hasEmbeddingModel = await this.isEmbeddingModelAvailable();
+      let message = `Connected successfully! Found ${modelNames.length} model(s)`;
+      
+      if (!hasEmbeddingModel) {
+        message += `. Warning: Embedding model "${EMBEDDING_MODEL}" not found - knowledge base features may be limited.`;
+      }
       
       return {
         success: true,
-        message: `Connected successfully! Found ${modelNames.length} model(s)`,
+        message,
         models: modelNames
       };
     } catch (error) {

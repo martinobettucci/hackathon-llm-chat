@@ -14,11 +14,12 @@ interface KnowledgeBaseProps {
 }
 
 export function KnowledgeBase({ projectId }: KnowledgeBaseProps) {
-  const { items, addItem, deleteItem } = useKnowledgeBase(projectId);
+  const { items, addItem, deleteItem, regenerateEmbeddings } = useKnowledgeBase(projectId);
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<KnowledgeBaseItem | null>(null);
   const [deletingItem, setDeletingItem] = useState<KnowledgeBaseItem | null>(null);
+  const [regeneratingItem, setRegeneratingItem] = useState<string | null>(null);
 
   const filteredItems = items.filter(item =>
     item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -51,15 +52,21 @@ export function KnowledgeBase({ projectId }: KnowledgeBaseProps) {
   const handleFileUpload = async (files: FileList) => {
     for (const file of Array.from(files)) {
       try {
+        // Only accept text files
+        if (!file.type.includes('text') && !file.name.endsWith('.txt') && !file.name.endsWith('.md')) {
+          console.warn(`Skipping non-text file: ${file.name}`);
+          continue;
+        }
+
         const content = await readFileContent(file);
         await addItem({
           projectId,
           type: 'document',
-          title: file.name,
+          title: file.name.replace(/\.[^/.]+$/, ''), // Remove file extension from title
           content,
           fileName: file.name,
           fileSize: file.size,
-          mimeType: file.type
+          mimeType: file.type || 'text/plain'
         });
       } catch (error) {
         console.error('Error uploading file:', error);
@@ -84,6 +91,18 @@ export function KnowledgeBase({ projectId }: KnowledgeBaseProps) {
     if (deletingItem) {
       await deleteItem(deletingItem.id);
       setDeletingItem(null);
+    }
+  };
+
+  const handleRegenerateEmbeddings = async (item: KnowledgeBaseItem) => {
+    try {
+      setRegeneratingItem(item.id);
+      await regenerateEmbeddings(item.id);
+      console.log('Embeddings regenerated successfully');
+    } catch (error) {
+      console.error('Failed to regenerate embeddings:', error);
+    } finally {
+      setRegeneratingItem(null);
     }
   };
 
@@ -112,6 +131,7 @@ export function KnowledgeBase({ projectId }: KnowledgeBaseProps) {
                 item={item}
                 onDelete={handleDeleteItem}
                 onPreview={setSelectedItem}
+                onRegenerateEmbeddings={handleRegenerateEmbeddings}
               />
             ))}
           </div>

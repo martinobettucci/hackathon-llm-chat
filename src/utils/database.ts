@@ -48,6 +48,22 @@ export class ChatDatabase extends Dexie {
       });
     });
 
+    // Version 3: Add embeddings support to knowledge base
+    this.version(3).stores({
+      chats: 'id, title, projectId, createdAt, updatedAt, prefersStructured',
+      messages: 'id, chatId, actor, timestamp',
+      projects: 'id, name, createdAt, updatedAt, isDefault',
+      knowledgeBase: 'id, projectId, type, title, createdAt, embeddings',
+      settings: 'theme'
+    }).upgrade(trans => {
+      // Initialize embeddings field for existing knowledge base items
+      return trans.table('knowledgeBase').toCollection().modify((item: any) => {
+        if (!item.embeddings) {
+          item.embeddings = null; // Will be generated on next access
+        }
+      });
+    });
+
     this.on('ready', this.initializeDefaults.bind(this));
   }
 

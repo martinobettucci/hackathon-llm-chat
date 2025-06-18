@@ -32,7 +32,8 @@ export function KnowledgeBaseHeader({
             onChange={(e) => e.target.files && onFileUpload(e.target.files)}
             className="hidden"
             id="file-upload"
-            accept=".txt,.md,.pdf,.doc,.docx"
+            accept=".txt,.md"
+            title="Upload text files only (.txt, .md)"
           />
           <Button
             variant="secondary"
@@ -40,8 +41,9 @@ export function KnowledgeBaseHeader({
             icon={Upload}
             onClick={() => document.getElementById('file-upload')?.click()}
             className="shadow-lg"
+            title="Upload text files (.txt, .md)"
           >
-            📄 Upload
+            📄 Upload Text
           </Button>
           <Button
             variant="primary"
@@ -63,6 +65,12 @@ export function KnowledgeBaseHeader({
           placeholder="🔍 Search your knowledge base..."
           className="pl-12 text-lg"
         />
+      </div>
+
+      <div className="mt-4 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-200">
+        <p className="text-sm text-blue-700">
+          <strong>💡 Tip:</strong> Only text files (.txt, .md) are supported. Documents are automatically processed with AI embeddings for intelligent search.
+        </p>
       </div>
     </div>
   );

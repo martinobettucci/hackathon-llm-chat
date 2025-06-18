@@ -33,6 +33,7 @@ export interface KnowledgeBaseItem {
   fileName?: string;
   fileSize?: number;
   mimeType?: string;
+  embeddings?: number[]; // Vector embeddings for semantic search
   createdAt: Date;
   updatedAt: Date;
 }
