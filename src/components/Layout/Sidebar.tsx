@@ -5,13 +5,17 @@ import { ChatList } from '../Chat/ChatList';
 import { Button } from '../UI/Button';
 import { SidebarHeader } from './SidebarHeader';
 import { SidebarNavButton } from './SidebarNavButton';
+import { Chat } from '../../types';
 
 interface SidebarProps {
   selectedProjectId?: string;
   selectedChatId?: string;
+  chats: Chat[];
   onSelectProject: (projectId: string) => void;
   onSelectChat: (chatId: string) => void;
   onNewChat: () => void;
+  onUpdateChat: (chatId: string, updates: Partial<{ title: string }>) => void;
+  onDeleteChat: (chatId: string) => void;
   activeView: 'chat' | 'knowledge';
   onViewChange: (view: 'chat' | 'knowledge') => void;
   onOpenSettings: () => void;
@@ -20,9 +24,12 @@ interface SidebarProps {
 export function Sidebar({
   selectedProjectId,
   selectedChatId,
+  chats,
   onSelectProject,
   onSelectChat,
   onNewChat,
+  onUpdateChat,
+  onDeleteChat,
   activeView,
   onViewChange,
   onOpenSettings
@@ -89,8 +96,11 @@ export function Sidebar({
                 <ChatList
                   projectId={selectedProjectId}
                   selectedChatId={selectedChatId}
+                  chats={chats}
                   onSelectChat={onSelectChat}
                   onNewChat={onNewChat}
+                  onUpdateChat={onUpdateChat}
+                  onDeleteChat={onDeleteChat}
                 />
               </div>
             )}

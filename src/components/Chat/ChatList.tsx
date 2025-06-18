@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { Plus } from 'lucide-react';
-import { useChats } from '../../hooks/useDatabase';
 import { Chat } from '../../types';
 import { Button } from '../UI/Button';
 import { EmptyState } from '../UI/EmptyState';
@@ -11,15 +10,28 @@ import { ChatItem } from './ChatItem';
 interface ChatListProps {
   projectId?: string;
   selectedChatId?: string;
+  chats: Chat[];
   onSelectChat: (chatId: string) => void;
   onNewChat: () => void;
+  onUpdateChat: (chatId: string, updates: Partial<{ title: string }>) => void;
+  onDeleteChat: (chatId: string) => void;
 }
 
-export function ChatList({ projectId, selectedChatId, onSelectChat, onNewChat }: ChatListProps) {
-  const { chats, deleteChat, updateChat } = useChats(projectId);
+export function ChatList({ 
+  projectId, 
+  selectedChatId, 
+  chats, 
+  onSelectChat, 
+  onNewChat, 
+  onUpdateChat, 
+  onDeleteChat 
+}: ChatListProps) {
   const [editingChatId, setEditingChatId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [deletingChat, setDeletingChat] = useState<Chat | null>(null);
+
+  // Filter chats by project ID (chats prop already filtered in App.tsx via useChats(projectId))
+  const filteredChats = chats;
 
   const handleDeleteChat = async (chat: Chat) => {
     setDeletingChat(chat);
@@ -27,7 +39,7 @@ export function ChatList({ projectId, selectedChatId, onSelectChat, onNewChat }:
 
   const confirmDeleteChat = async () => {
     if (deletingChat) {
-      await deleteChat(deletingChat.id);
+      await onDeleteChat(deletingChat.id);
       setDeletingChat(null);
     }
   };
@@ -39,7 +51,7 @@ export function ChatList({ projectId, selectedChatId, onSelectChat, onNewChat }:
 
   const handleSaveTitle = async (chatId: string) => {
     if (editTitle.trim()) {
-      await updateChat(chatId, { title: editTitle.trim() });
+      await onUpdateChat(chatId, { title: editTitle.trim() });
     }
     setEditingChatId(null);
     setEditTitle('');
@@ -70,14 +82,14 @@ export function ChatList({ projectId, selectedChatId, onSelectChat, onNewChat }:
       </div>
 
       <div className="space-y-3">
-        {chats.length === 0 ? (
+        {filteredChats.length === 0 ? (
           <EmptyState
             icon="💬"
             title="No chats yet!"
             description="Start your first conversation ✨"
           />
         ) : (
-          chats.map((chat) => (
+          filteredChats.map((chat) => (
             <ChatItem
               key={chat.id}
               chat={chat}
