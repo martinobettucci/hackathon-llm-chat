@@ -53,6 +53,9 @@ Your task: Analyze this conversation and extract the user's complete current int
       stream: false,
       think: true               // Active le "thinking"
     });
+
+    // debug
+    console.log(JSON.stringify(response.message.content))
     
     // Reset service unavailable flag on successful response
     setServiceUnavailable(false);
