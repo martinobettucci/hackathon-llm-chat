@@ -528,12 +528,12 @@ ${sections}
 **Signification:** La réponse du modèle IA ne correspond pas au format attendu après ${attempts.length} tentatives. Cela indique généralement que le modèle a besoin de meilleures instructions ou qu'il y a un problème temporaire avec le formatage de la réponse.`;
 }
 
-// Retrieve relevant documents from knowledge base using semantic search
+// Retrieve relevant documents from knowledge base using semantic search on chunks
 async function retrieveRelevantDocuments(
   userQuery: string,
   projectId: string,
   taskManager: StrategyTaskManager,
-  topK: number = 3
+  topK: number = 5
 ): Promise<{ documents: any[], contextInfo: string }> {
   try {
     taskManager.startTask('retrieve', 'Recherche de documents pertinents...');
@@ -546,58 +546,69 @@ async function retrieveRelevantDocuments(
     taskManager.updateTaskMessage('retrieve', 'Génération des embeddings de la requête...');
     const queryEmbeddings = await OllamaService.generateEmbeddings(userQuery);
 
-    // Get all knowledge base items with embeddings for this project
-    taskManager.updateTaskMessage('retrieve', 'Récupération des documents...');
-    const knowledgeItems = await db.knowledgeBase
+    // Get all knowledge base chunks with embeddings for this project
+    taskManager.updateTaskMessage('retrieve', 'Récupération des chunks...');
+    const knowledgeChunks = await db.knowledgeBaseChunks
       .where('projectId')
       .equals(projectId)
-      .filter(item => item.embeddings && item.embeddings.length > 0 && item.content)
+      .filter(chunk => chunk.embeddings && chunk.embeddings.length > 0 && chunk.content)
       .toArray();
 
-    if (knowledgeItems.length === 0) {
-      taskManager.completeTask('retrieve', 'Aucun document avec embeddings trouvé');
+    if (knowledgeChunks.length === 0) {
+      taskManager.completeTask('retrieve', 'Aucun chunk avec embeddings trouvé');
       return { documents: [], contextInfo: '' };
     }
 
-    taskManager.updateTaskMessage('retrieve', `Analyse de ${knowledgeItems.length} documents...`);
+    taskManager.updateTaskMessage('retrieve', `Analyse de ${knowledgeChunks.length} chunks...`);
 
-    // Calculate similarities and rank documents
-    const documentSimilarities = knowledgeItems.map(item => {
+    // Calculate similarities and rank chunks
+    const chunkSimilarities = knowledgeChunks.map(chunk => {
       try {
-        const similarity = cosineSimilarity(queryEmbeddings, item.embeddings!);
-        return { item, similarity };
+        const similarity = cosineSimilarity(queryEmbeddings, chunk.embeddings!);
+        return { chunk, similarity };
       } catch (error) {
-        console.error(`Error calculating similarity for item ${item.id}:`, error);
-        return { item, similarity: 0 };
+        console.error(`Error calculating similarity for chunk ${chunk.id}:`, error);
+        return { chunk, similarity: 0 };
       }
     });
 
     // Sort by similarity (highest first) and filter by threshold
-    const relevantDocuments = documentSimilarities
+    const relevantChunks = chunkSimilarities
       .filter(doc => doc.similarity >= similarityThreshold)
       .sort((a, b) => b.similarity - a.similarity)
       .slice(0, topK);
 
-    if (relevantDocuments.length === 0) {
-      taskManager.completeTask('retrieve', `Aucun document au-dessus du seuil ${similarityThreshold.toFixed(2)}`);
+    if (relevantChunks.length === 0) {
+      taskManager.completeTask('retrieve', `Aucun chunk au-dessus du seuil ${similarityThreshold.toFixed(2)}`);
       return { documents: [], contextInfo: '' };
     }
 
+    // Get the parent knowledge base items for context
+    taskManager.updateTaskMessage('retrieve', 'Récupération des métadonnées...');
+    const parentItemIds = [...new Set(relevantChunks.map(rc => rc.chunk.itemId))];
+    const parentItems = await db.knowledgeBase.where('id').anyOf(parentItemIds).toArray();
+    const parentItemsMap = new Map(parentItems.map(item => [item.id, item]));
+
     // Create context information
-    const documentTitles = relevantDocuments.map(doc => `"${doc.item.title}"`);
-    const contextInfo = `Contexte augmenté avec : ${documentTitles.join(', ')} (${relevantDocuments.length} document${relevantDocuments.length > 1 ? 's' : ''}, seuil: ${similarityThreshold.toFixed(2)})`;
+    const uniqueDocuments = parentItemIds.length;
+    const contextInfo = `Contexte augmenté avec ${relevantChunks.length} chunk${relevantChunks.length > 1 ? 's' : ''} de ${uniqueDocuments} document${uniqueDocuments > 1 ? 's' : ''} (seuil: ${similarityThreshold.toFixed(2)})`;
 
-    taskManager.completeTask('retrieve', `${relevantDocuments.length} document(s) pertinent(s) trouvé(s)`);
+    taskManager.completeTask('retrieve', `${relevantChunks.length} chunk(s) pertinent(s) trouvé(s)`);
 
-    // Return relevant documents with their content
+    // Return relevant chunks with their content and parent item metadata
     return {
-      documents: relevantDocuments.map(doc => ({
-        title: doc.item.title,
-        content: doc.item.content,
-        similarity: doc.similarity,
-        type: doc.item.type,
-        url: doc.item.url
-      })),
+      documents: relevantChunks.map(rc => {
+        const parentItem = parentItemsMap.get(rc.chunk.itemId);
+        return {
+          title: rc.chunk.title || parentItem?.title || 'Untitled',
+          content: rc.chunk.content,
+          similarity: rc.similarity,
+          chunkOrder: rc.chunk.order,
+          parentDocumentTitle: parentItem?.title,
+          parentDocumentType: parentItem?.type,
+          parentDocumentUrl: parentItem?.url
+        };
+      }),
       contextInfo
     };
 
@@ -651,10 +662,17 @@ export async function runStrategy(
       );
 
       if (documents.length > 0) {
-        // Create augmented context for the LLM
-        augmentedContext = documents.map(doc => 
-          `## ${doc.title}\n${doc.content}\n`
-        ).join('\n');
+        // Create augmented context for the LLM using chunks
+        augmentedContext = documents.map(doc => {
+          let chunkContext = `## ${doc.title}\n${doc.content}\n`;
+          
+          // Add parent document context if different from chunk title
+          if (doc.parentDocumentTitle && doc.parentDocumentTitle !== doc.title) {
+            chunkContext = `### From: ${doc.parentDocumentTitle} (Chapter ${doc.chunkOrder + 1})\n${chunkContext}`;
+          }
+          
+          return chunkContext;
+        }).join('\n');
 
         // Create agent message to inform the user about context augmentation
         ragAgentMessage = {
@@ -664,7 +682,7 @@ export async function runStrategy(
             type: 'formatted',
             blocks: [{
               type: 'markdown',
-              text: `🔍 **${contextInfo}**\n\nJ'ai trouvé des documents pertinents dans votre base de connaissances pour enrichir ma réponse. Ces informations contextuelles m'aideront à vous fournir une réponse plus précise et personnalisée.`
+              text: `🔍 **${contextInfo}**\n\nJ'ai trouvé des sections pertinentes dans votre base de connaissances pour enrichir ma réponse. Ces informations contextuelles m'aideront à vous fournir une réponse plus précise et personnalisée basée sur vos documents.`
             } as MarkdownBlockType]
           },
           timestamp: new Date(),
@@ -723,11 +741,11 @@ export async function runStrategy(
       systemPrompt += `
 
 ADDITIONAL CONTEXT FROM KNOWLEDGE BASE:
-The following information has been retrieved from the user's knowledge base and may be relevant to their query. Use this context to inform your response if relevant, but don't mention that you're using external context unless specifically asked:
+The following information has been retrieved from the user's knowledge base and is highly relevant to their query. Use this context to inform your response, but integrate it naturally without explicitly mentioning that you're using external context unless specifically asked:
 
 ${augmentedContext}
 
-Use this contextual information to provide a more informed and personalized response.`;
+Use this contextual information to provide a more informed, accurate, and personalized response. Prioritize information from the knowledge base when it's relevant to the user's question.`;
     }
 
     // Convert history to chat messages for Ollama (including agent messages)

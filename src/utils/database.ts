@@ -1,5 +1,5 @@
 import Dexie, { Table } from 'dexie';
-import { Chat, Message, Project, KnowledgeBaseItem, AppSettings } from '../types';
+import { Chat, Message, Project, KnowledgeBaseItem, KnowledgeBaseChunk, AppSettings } from '../types';
 import { FormattedContent, MarkdownBlock, StrategyContent } from '../schema';
 
 export class ChatDatabase extends Dexie {
@@ -7,6 +7,7 @@ export class ChatDatabase extends Dexie {
   messages!: Table<Message>;
   projects!: Table<Project>;
   knowledgeBase!: Table<KnowledgeBaseItem>;
+  knowledgeBaseChunks!: Table<KnowledgeBaseChunk>;
   settings!: Table<AppSettings>;
 
   constructor() {
@@ -99,6 +100,16 @@ export class ChatDatabase extends Dexie {
           settings.similarityThreshold = 0.7; // Default value
         }
       });
+    });
+
+    // Version 6: Add knowledge base chunks for better RAG
+    this.version(6).stores({
+      chats: 'id, title, projectId, createdAt, updatedAt, prefersStructured',
+      messages: 'id, chatId, actor, timestamp',
+      projects: 'id, name, createdAt, updatedAt, isDefault',
+      knowledgeBase: 'id, projectId, type, title, createdAt, embeddings',
+      knowledgeBaseChunks: 'id, itemId, projectId, order, createdAt, embeddings',
+      settings: 'theme, selectedGenerationModel, selectedEmbeddingModel, similarityThreshold'
     });
 
     this.on('ready', this.initializeDefaults.bind(this));

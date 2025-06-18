@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { db } from '../utils/database';
-import { Chat, Message, Project, KnowledgeBaseItem } from '../types';
+import { Chat, Message, Project, KnowledgeBaseItem, KnowledgeBaseChunk } from '../types';
 import { OllamaService } from '../services/ollama';
+import { splitMarkdownIntoChunks, validateChunkQuality, getChunkingStats } from '../utils/markdownChunker';
 
 export function useProjects() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -231,71 +232,330 @@ export function useKnowledgeBase(projectId?: string) {
   };
 
   const addItem = async (item: Omit<KnowledgeBaseItem, 'id' | 'createdAt' | 'updatedAt' | 'embeddings'>) => {
-    const newItem: KnowledgeBaseItem = {
-      ...item,
-      id: crypto.randomUUID(),
-      createdAt: new Date(),
-      updatedAt: new Date()
-    };
-
+    console.log('🤖 Starting mandatory AI curation process...');
+    
     try {
-      // Generate embeddings for content if available
-      if (newItem.content && newItem.content.trim()) {
-        console.log('Generating embeddings for knowledge base item...');
-        
-        // Prepare text for embedding (combine title and content for better context)
-        const textToEmbed = `${newItem.title}\n\n${newItem.content}`;
-        
-        const embeddings = await OllamaService.generateEmbeddings(textToEmbed);
-        newItem.embeddings = embeddings;
-        
-        console.log(`Generated embeddings with ${embeddings.length} dimensions`);
+      // Step 1: Prepare content for curation
+      let rawContent = '';
+      let originalTitle = item.title;
+      
+      if (item.type === 'url' && item.url) {
+        if (item.content && item.content.trim()) {
+          // Use provided content if available
+          rawContent = item.content;
+        } else {
+          // For URLs without content, we'll curate just the URL and title
+          rawContent = `URL: ${item.url}\nTitle: ${item.title}`;
+        }
+      } else if (item.content) {
+        rawContent = item.content;
       } else {
-        console.warn('No content available for embedding generation');
+        throw new Error('No content available for curation');
       }
-    } catch (error) {
-      console.error('Error generating embeddings:', error);
-      // Continue without embeddings - the item will still be saved
-      console.warn('Saving item without embeddings due to generation error');
-    }
 
-    await db.knowledgeBase.add(newItem);
-    await loadKnowledgeBase();
-    return newItem;
+      console.log('📝 Raw content length:', rawContent.length);
+
+      // Step 2: MANDATORY AI curation
+      console.log('🧹 Cleaning and organizing content with AI...');
+      
+      const curatedResult = await OllamaService.cleanAndOrganizeContent(
+        rawContent,
+        originalTitle
+      );
+
+      console.log('✨ AI curation completed');
+      console.log('📊 Curated content length:', curatedResult.content.length);
+      
+      // Step 3: Create the knowledge base item with curated content
+      const newItem: KnowledgeBaseItem = {
+        ...item,
+        id: crypto.randomUUID(),
+        title: curatedResult.title || item.title, // Use AI-generated title if available
+        content: curatedResult.content, // Always use curated content
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+
+      console.log('📚 Final item title:', newItem.title);
+
+      // Step 4: Generate embeddings for the full document
+      console.log('🔗 Generating embeddings for full document...');
+      
+      try {
+        const textToEmbed = `${newItem.title}\n\n${newItem.content}`;
+        const documentEmbeddings = await OllamaService.generateEmbeddings(textToEmbed);
+        newItem.embeddings = documentEmbeddings;
+        
+        console.log(`📊 Generated document embeddings with ${documentEmbeddings.length} dimensions`);
+      } catch (embeddingError) {
+        console.error('❌ Error generating document embeddings:', embeddingError);
+        console.warn('⚠️ Continuing without document embeddings');
+      }
+
+      // Step 5: Save the main item
+      await db.knowledgeBase.add(newItem);
+      console.log('💾 Main knowledge base item saved');
+
+      // Step 6: Split into chunks using markdown structure
+      console.log('✂️ Splitting content into chunks...');
+      
+      const chunkTemplates = splitMarkdownIntoChunks(
+        newItem.content,
+        newItem.id,
+        newItem.projectId
+      );
+
+      console.log(`📦 Created ${chunkTemplates.length} chunks`);
+      
+      // Log chunking statistics
+      const stats = getChunkingStats(chunkTemplates);
+      console.log('📈 Chunking stats:', stats);
+
+      // Step 7: Generate embeddings and save each chunk
+      const chunks: KnowledgeBaseChunk[] = [];
+      
+      for (let i = 0; i < chunkTemplates.length; i++) {
+        const template = chunkTemplates[i];
+        
+        // Validate chunk quality
+        const validation = validateChunkQuality(template);
+        if (!validation.isValid) {
+          console.warn(`⚠️ Chunk ${i} quality issues:`, validation.issues);
+          // Skip poor quality chunks
+          continue;
+        }
+
+        console.log(`🔗 Generating embeddings for chunk ${i + 1}/${chunkTemplates.length}...`);
+        
+        try {
+          // Prepare chunk text for embedding (include title if available)
+          const chunkTextToEmbed = template.title 
+            ? `${template.title}\n\n${template.content}`
+            : template.content;
+            
+          const chunkEmbeddings = await OllamaService.generateEmbeddings(chunkTextToEmbed);
+          
+          const chunk: KnowledgeBaseChunk = {
+            ...template,
+            id: crypto.randomUUID(),
+            embeddings: chunkEmbeddings,
+            createdAt: new Date(),
+            updatedAt: new Date()
+          };
+          
+          chunks.push(chunk);
+          console.log(`✅ Chunk ${i + 1} processed with ${chunkEmbeddings.length}D embeddings`);
+          
+        } catch (chunkEmbeddingError) {
+          console.error(`❌ Error generating embeddings for chunk ${i}:`, chunkEmbeddingError);
+          
+          // Save chunk without embeddings rather than failing completely
+          const chunk: KnowledgeBaseChunk = {
+            ...template,
+            id: crypto.randomUUID(),
+            embeddings: undefined,
+            createdAt: new Date(),
+            updatedAt: new Date()
+          };
+          
+          chunks.push(chunk);
+          console.warn(`⚠️ Chunk ${i + 1} saved without embeddings`);
+        }
+      }
+
+      // Step 8: Bulk save all chunks
+      if (chunks.length > 0) {
+        await db.knowledgeBaseChunks.bulkAdd(chunks);
+        console.log(`💾 Saved ${chunks.length} chunks to database`);
+      } else {
+        console.warn('⚠️ No valid chunks were created');
+      }
+
+      // Step 9: Refresh the UI
+      await loadKnowledgeBase();
+      
+      console.log('🎉 Knowledge base item creation completed successfully!');
+      console.log(`📊 Final stats: 1 document, ${chunks.length} chunks, ${newItem.embeddings ? 'with' : 'without'} document embeddings`);
+      
+      return newItem;
+
+    } catch (error) {
+      console.error('💥 Error in mandatory AI curation process:', error);
+      
+      // For critical errors, we'll still try to save a basic version
+      console.log('🚨 Attempting fallback save without AI processing...');
+      
+      try {
+        const fallbackItem: KnowledgeBaseItem = {
+          ...item,
+          id: crypto.randomUUID(),
+          createdAt: new Date(),
+          updatedAt: new Date()
+        };
+        
+        await db.knowledgeBase.add(fallbackItem);
+        await loadKnowledgeBase();
+        
+        console.log('⚠️ Item saved without AI processing due to error');
+        return fallbackItem;
+        
+      } catch (fallbackError) {
+        console.error('💥 Fallback save also failed:', fallbackError);
+        throw new Error(`Failed to add knowledge base item: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    }
   };
 
   const updateItem = async (id: string, updates: Partial<KnowledgeBaseItem>) => {
     try {
-      // If content is being updated, regenerate embeddings
-      if (updates.content !== undefined) {
-        const item = await db.knowledgeBase.get(id);
-        if (item && updates.content && updates.content.trim()) {
-          console.log('Regenerating embeddings for updated content...');
+      const item = await db.knowledgeBase.get(id);
+      if (!item) {
+        throw new Error('Knowledge base item not found');
+      }
+
+      // If content is being updated, we need to re-curate and re-chunk
+      if (updates.content !== undefined || updates.title !== undefined) {
+        console.log('🔄 Content/title updated, starting re-curation process...');
+        
+        const newTitle = updates.title !== undefined ? updates.title : item.title;
+        const newContent = updates.content !== undefined ? updates.content : item.content;
+        
+        if (newContent && newContent.trim()) {
+          console.log('🧹 Re-cleaning content with AI...');
           
-          const title = updates.title || item.title;
-          const textToEmbed = `${title}\n\n${updates.content}`;
+          try {
+            // Re-curate the content
+            const curatedResult = await OllamaService.cleanAndOrganizeContent(
+              newContent,
+              newTitle
+            );
+            
+            // Update with curated content
+            updates.content = curatedResult.content;
+            if (curatedResult.title && !updates.title) {
+              updates.title = curatedResult.title;
+            }
+
+            // Regenerate document embeddings
+            console.log('🔗 Regenerating document embeddings...');
+            const textToEmbed = `${updates.title || item.title}\n\n${updates.content}`;
+            const documentEmbeddings = await OllamaService.generateEmbeddings(textToEmbed);
+            updates.embeddings = documentEmbeddings;
+            
+            console.log('✅ Document embeddings regenerated');
+
+          } catch (curationError) {
+            console.error('❌ Re-curation failed:', curationError);
+            console.log('⚠️ Proceeding without re-curation');
+          }
+        }
+
+        // Delete old chunks
+        console.log('🗑️ Removing old chunks...');
+        await db.knowledgeBaseChunks.where('itemId').equals(id).delete();
+
+        // Generate new chunks if we have content
+        if (updates.content && updates.content.trim()) {
+          console.log('✂️ Creating new chunks...');
           
-          const embeddings = await OllamaService.generateEmbeddings(textToEmbed);
-          updates.embeddings = embeddings;
+          const chunkTemplates = splitMarkdownIntoChunks(
+            updates.content,
+            id,
+            item.projectId
+          );
+
+          console.log(`📦 Created ${chunkTemplates.length} new chunks`);
+
+          // Generate embeddings and save new chunks
+          const newChunks: KnowledgeBaseChunk[] = [];
           
-          console.log(`Regenerated embeddings with ${embeddings.length} dimensions`);
-        } else if (updates.content === '') {
-          // If content is cleared, remove embeddings
-          updates.embeddings = undefined;
+          for (let i = 0; i < chunkTemplates.length; i++) {
+            const template = chunkTemplates[i];
+            
+            const validation = validateChunkQuality(template);
+            if (!validation.isValid) {
+              console.warn(`⚠️ New chunk ${i} quality issues:`, validation.issues);
+              continue;
+            }
+
+            try {
+              const chunkTextToEmbed = template.title 
+                ? `${template.title}\n\n${template.content}`
+                : template.content;
+                
+              const chunkEmbeddings = await OllamaService.generateEmbeddings(chunkTextToEmbed);
+              
+              const chunk: KnowledgeBaseChunk = {
+                ...template,
+                id: crypto.randomUUID(),
+                embeddings: chunkEmbeddings,
+                createdAt: new Date(),
+                updatedAt: new Date()
+              };
+              
+              newChunks.push(chunk);
+              
+            } catch (chunkError) {
+              console.error(`❌ Error processing new chunk ${i}:`, chunkError);
+              
+              const chunk: KnowledgeBaseChunk = {
+                ...template,
+                id: crypto.randomUUID(),
+                embeddings: undefined,
+                createdAt: new Date(),
+                updatedAt: new Date()
+              };
+              
+              newChunks.push(chunk);
+            }
+          }
+
+          if (newChunks.length > 0) {
+            await db.knowledgeBaseChunks.bulkAdd(newChunks);
+            console.log(`💾 Saved ${newChunks.length} new chunks`);
+          }
+        }
+      } else {
+        // For other updates (like title only), just regenerate embeddings if needed
+        if (updates.title && item.content) {
+          try {
+            console.log('🔗 Regenerating embeddings for title change...');
+            const textToEmbed = `${updates.title}\n\n${item.content}`;
+            const embeddings = await OllamaService.generateEmbeddings(textToEmbed);
+            updates.embeddings = embeddings;
+          } catch (error) {
+            console.error('❌ Error regenerating embeddings for title change:', error);
+          }
         }
       }
-    } catch (error) {
-      console.error('Error regenerating embeddings:', error);
-      // Continue with update without embeddings
-    }
 
-    await db.knowledgeBase.update(id, { ...updates, updatedAt: new Date() });
-    await loadKnowledgeBase();
+      // Update the main item
+      await db.knowledgeBase.update(id, { ...updates, updatedAt: new Date() });
+      await loadKnowledgeBase();
+      
+      console.log('✅ Knowledge base item update completed');
+      
+    } catch (error) {
+      console.error('💥 Error updating knowledge base item:', error);
+      throw error;
+    }
   };
 
   const deleteItem = async (id: string) => {
-    await db.knowledgeBase.delete(id);
-    await loadKnowledgeBase();
+    try {
+      // Delete all associated chunks first
+      await db.knowledgeBaseChunks.where('itemId').equals(id).delete();
+      console.log('🗑️ Deleted associated chunks');
+      
+      // Delete the main item
+      await db.knowledgeBase.delete(id);
+      console.log('🗑️ Deleted main knowledge base item');
+      
+      await loadKnowledgeBase();
+    } catch (error) {
+      console.error('❌ Error deleting knowledge base item:', error);
+      throw error;
+    }
   };
 
   const regenerateEmbeddings = async (id: string) => {
@@ -305,22 +565,44 @@ export function useKnowledgeBase(projectId?: string) {
         throw new Error('Item not found or has no content to embed');
       }
 
-      console.log('Regenerating embeddings for item:', item.title);
+      console.log('🔄 Regenerating embeddings for item:', item.title);
       
+      // Regenerate document embeddings
       const textToEmbed = `${item.title}\n\n${item.content}`;
-      const embeddings = await OllamaService.generateEmbeddings(textToEmbed);
+      const documentEmbeddings = await OllamaService.generateEmbeddings(textToEmbed);
       
       await db.knowledgeBase.update(id, { 
-        embeddings, 
+        embeddings: documentEmbeddings, 
         updatedAt: new Date() 
       });
+
+      // Regenerate chunk embeddings
+      const chunks = await db.knowledgeBaseChunks.where('itemId').equals(id).toArray();
+      
+      for (const chunk of chunks) {
+        try {
+          const chunkTextToEmbed = chunk.title 
+            ? `${chunk.title}\n\n${chunk.content}`
+            : chunk.content;
+            
+          const chunkEmbeddings = await OllamaService.generateEmbeddings(chunkTextToEmbed);
+          
+          await db.knowledgeBaseChunks.update(chunk.id, {
+            embeddings: chunkEmbeddings,
+            updatedAt: new Date()
+          });
+          
+        } catch (chunkError) {
+          console.error(`❌ Error regenerating embeddings for chunk ${chunk.id}:`, chunkError);
+        }
+      }
       
       await loadKnowledgeBase();
       
-      console.log(`Successfully regenerated embeddings with ${embeddings.length} dimensions`);
-      return embeddings;
+      console.log(`✅ Successfully regenerated embeddings for document and ${chunks.length} chunks`);
+      return documentEmbeddings;
     } catch (error) {
-      console.error('Error regenerating embeddings:', error);
+      console.error('❌ Error regenerating embeddings:', error);
       throw error;
     }
   };

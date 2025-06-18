@@ -38,6 +38,18 @@ export interface KnowledgeBaseItem {
   updatedAt: Date;
 }
 
+export interface KnowledgeBaseChunk {
+  id: string;
+  itemId: string; // Reference to the parent KnowledgeBaseItem
+  projectId: string;
+  title?: string; // Chapter/section title if available
+  content: string; // Markdown content of this chunk
+  order: number; // Order within the parent item (0, 1, 2, ...)
+  embeddings?: number[]; // Vector embeddings for this specific chunk
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface AppSettings {
   theme: 'light' | 'dark';
   selectedGenerationModel?: string;
