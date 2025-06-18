@@ -74,6 +74,12 @@ class StrategyTaskManager {
       message: 'Connexion en attente...'
     },
     {
+      id: 'user-intent',
+      name: 'Intention',
+      status: 'todo',
+      message: 'Extraction de l\'intention en attente...'
+    },
+    {
       id: 'retrieve',
       name: 'Récupération',
       status: 'todo',
@@ -649,18 +655,70 @@ export async function runStrategy(
     StrategyRunInput.parse(strategyInput);
     taskManager.completeTask('connect', 'Connecté');
 
-    // Task 2: Retrieve relevant documents from knowledge base
+    // Task 2: Extract user intent from conversation history
+    let extractedUserIntent = '';
     const lastUserMessage = [...history].reverse().find(msg => msg.actor === 'user');
+    
+    if (lastUserMessage && history.length > 2) { // Only extract intent if there's a conversation history
+      taskManager.startTask('user-intent', 'Extraction de l\'intention utilisateur...');
+      
+      try {
+        // Convert history to chat messages for intent extraction
+        const chatHistory = history
+          .filter(msg => ['user', 'llm', 'agent'].includes(msg.actor))
+          .map(msg => {
+            let content = '';
+            
+            if (msg.content.type === 'formatted') {
+              content = msg.content.blocks
+                .map(block => block.type === 'markdown' ? block.text : `\`\`\`${block.language || ''}\n${block.code}\n\`\`\``)
+                .join('\n\n');
+            } else if (msg.content.type === 'toolCall') {
+              content = msg.content.display;
+            }
+            
+            return {
+              role: msg.actor === 'llm' ? 'assistant' as const : msg.actor === 'agent' ? 'assistant' as const : 'user' as const,
+              content
+            };
+          });
+
+        taskManager.updateTaskMessage('user-intent', 'Reformulation de l\'intention complète...');
+        extractedUserIntent = await OllamaService.extractUserIntent(chatHistory);
+        
+        taskManager.completeTask('user-intent', `Intention extraite: "${extractedUserIntent.substring(0, 50)}${extractedUserIntent.length > 50 ? '...' : ''}"`);
+        
+      } catch (error) {
+        console.error('Error extracting user intent:', error);
+        taskManager.errorTask('user-intent', 'Erreur d\'extraction d\'intention');
+        
+        // Fallback to the last user message
+        if (lastUserMessage.content.type === 'formatted') {
+          extractedUserIntent = lastUserMessage.content.blocks
+            .map(block => block.type === 'markdown' ? block.text : block.code)
+            .join(' ');
+        }
+      }
+    } else if (lastUserMessage) {
+      // No conversation history, use the current message directly
+      taskManager.startTask('user-intent', 'Utilisation du message actuel...');
+      
+      if (lastUserMessage.content.type === 'formatted') {
+        extractedUserIntent = lastUserMessage.content.blocks
+          .map(block => block.type === 'markdown' ? block.text : block.code)
+          .join(' ');
+      }
+      
+      taskManager.completeTask('user-intent', 'Message actuel utilisé');
+    }
+
+    // Task 3: Retrieve relevant documents from knowledge base using extracted intent
     let augmentedContext = '';
     let ragAgentMessage: HistoryMessageType | null = null;
 
-    if (lastUserMessage && lastUserMessage.content.type === 'formatted' && projectId) {
-      const userQuery = lastUserMessage.content.blocks
-        .map(block => block.type === 'markdown' ? block.text : block.code)
-        .join(' ');
-
+    if (extractedUserIntent && projectId) {
       const { documents, contextInfo } = await retrieveRelevantDocuments(
-        userQuery,
+        extractedUserIntent, // Use extracted intent instead of just the last message
         projectId,
         taskManager
       );
@@ -693,16 +751,16 @@ export async function runStrategy(
             type: 'formatted',
             blocks: [{
               type: 'markdown',
-              text: `🔍 **${contextInfo}**\n\nSections trouvées:\n${documentList}\n\nJ'ai trouvé des sections pertinentes dans votre base de connaissances pour enrichir ma réponse. Ces informations contextuelles, incluant leurs chapitres hiérarchiques, m'aideront à vous fournir une réponse plus précise et personnalisée basée sur vos documents.`
+              text: `🔍 **${contextInfo}**\n\nSections trouvées:\n${documentList}\n\nJ'ai analysé votre intention dans le contexte de notre conversation et trouvé des sections pertinentes dans votre base de connaissances. Ces informations contextuelles, incluant leurs chapitres hiérarchiques, m'aideront à vous fournir une réponse plus précise et personnalisée basée sur vos documents.`
             } as MarkdownBlockType]
           },
           timestamp: new Date(),
-          chatId: lastUserMessage.chatId
+          chatId: lastUserMessage?.chatId || ''
         };
       }
     }
 
-    // Task 3: Analyze request
+    // Task 4: Analyze request
     taskManager.startTask('analyze', 'Analyse de la requête...');
 
     // Build system prompt for structured output
@@ -752,7 +810,7 @@ export async function runStrategy(
       systemPrompt += `
 
 ADDITIONAL CONTEXT FROM KNOWLEDGE BASE:
-The following information has been retrieved from the user's knowledge base and is highly relevant to their query. Each section includes its hierarchical context (titles, chapters, etc.) for better understanding. Use this context to inform your response, but integrate it naturally without explicitly mentioning that you're using external context unless specifically asked:
+The following information has been retrieved from the user's knowledge base based on their complete intent analysis from the conversation history. Each section includes its hierarchical context (titles, chapters, etc.) for better understanding. Use this context to inform your response, but integrate it naturally without explicitly mentioning that you're using external context unless specifically asked:
 
 ${augmentedContext}
 
@@ -787,7 +845,7 @@ Use this contextual information to provide a more informed, accurate, and person
 
     taskManager.completeTask('analyze', 'Requête analysée');
 
-    // Tasks 4-6: Will be managed by the LLM call with live streaming analysis
+    // Tasks 5-7: Will be managed by the LLM call with live streaming analysis
     taskManager.startTask('identify-actor', 'Identification en cours...');
 
     // Attempt LLM call with live streaming analysis and retries
