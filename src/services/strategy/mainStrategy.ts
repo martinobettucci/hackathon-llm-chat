@@ -112,7 +112,6 @@ export async function runStrategy(
     taskManager.startTask('advanced-reasoning', 'Évaluation du besoin de réflexion avancée...');
     
     const activateThinkMode = await shouldActivateAdvancedReasoning(
-      history,
       extractedUserIntent,
       taskManager
     );
