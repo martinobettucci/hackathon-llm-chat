@@ -94,6 +94,15 @@ export function ChatInterface({ chatId, projectId }: ChatInterfaceProps) {
         handleStrategyStatusUpdate
       );
 
+      // Check if there's a RAG agent message to add first
+      if ((strategyResponse as any).ragAgentMessage) {
+        const ragAgentMessage = (strategyResponse as any).ragAgentMessage;
+        await addMessage(ragAgentMessage);
+        
+        // Clean up the temporary property
+        delete (strategyResponse as any).ragAgentMessage;
+      }
+
       // Add AI response to database
       await addMessage(strategyResponse);
 

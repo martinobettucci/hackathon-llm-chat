@@ -10,6 +10,7 @@ import {
   ActorType
 } from '../schema';
 import { OllamaService } from './ollama';
+import { db } from '../utils/database';
 
 // Task status system
 export interface StrategyTask {
@@ -39,6 +40,29 @@ interface RetryAttempt {
   error: string;
 }
 
+// Cosine similarity function for embeddings comparison
+function cosineSimilarity(a: number[], b: number[]): number {
+  if (a.length !== b.length) {
+    throw new Error('Vectors must have the same length');
+  }
+  
+  let dotProduct = 0;
+  let normA = 0;
+  let normB = 0;
+  
+  for (let i = 0; i < a.length; i++) {
+    dotProduct += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+  
+  if (normA === 0 || normB === 0) {
+    return 0;
+  }
+  
+  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
 // Task manager for strategy execution
 class StrategyTaskManager {
   private tasks: StrategyTask[] = [
@@ -47,6 +71,12 @@ class StrategyTaskManager {
       name: 'Connexion',
       status: 'todo',
       message: 'Connexion en attente...'
+    },
+    {
+      id: 'retrieve',
+      name: 'Récupération',
+      status: 'todo',
+      message: 'Récupération en attente...'
     },
     {
       id: 'analyze',
@@ -497,6 +527,86 @@ ${sections}
 **Signification:** La réponse du modèle IA ne correspond pas au format attendu après ${attempts.length} tentatives. Cela indique généralement que le modèle a besoin de meilleures instructions ou qu'il y a un problème temporaire avec le formatage de la réponse.`;
 }
 
+// Retrieve relevant documents from knowledge base using semantic search
+async function retrieveRelevantDocuments(
+  userQuery: string,
+  projectId: string,
+  taskManager: StrategyTaskManager,
+  topK: number = 3,
+  similarityThreshold: number = 0.7
+): Promise<{ documents: any[], contextInfo: string }> {
+  try {
+    taskManager.startTask('retrieve', 'Recherche de documents pertinents...');
+
+    // Generate embeddings for the user query
+    taskManager.updateTaskMessage('retrieve', 'Génération des embeddings de la requête...');
+    const queryEmbeddings = await OllamaService.generateEmbeddings(userQuery);
+
+    // Get all knowledge base items with embeddings for this project
+    taskManager.updateTaskMessage('retrieve', 'Récupération des documents...');
+    const knowledgeItems = await db.knowledgeBase
+      .where('projectId')
+      .equals(projectId)
+      .filter(item => item.embeddings && item.embeddings.length > 0 && item.content)
+      .toArray();
+
+    if (knowledgeItems.length === 0) {
+      taskManager.completeTask('retrieve', 'Aucun document avec embeddings trouvé');
+      return { documents: [], contextInfo: '' };
+    }
+
+    taskManager.updateTaskMessage('retrieve', `Analyse de ${knowledgeItems.length} documents...`);
+
+    // Calculate similarities and rank documents
+    const documentSimilarities = knowledgeItems.map(item => {
+      try {
+        const similarity = cosineSimilarity(queryEmbeddings, item.embeddings!);
+        return { item, similarity };
+      } catch (error) {
+        console.error(`Error calculating similarity for item ${item.id}:`, error);
+        return { item, similarity: 0 };
+      }
+    });
+
+    // Sort by similarity (highest first) and filter by threshold
+    const relevantDocuments = documentSimilarities
+      .filter(doc => doc.similarity >= similarityThreshold)
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, topK);
+
+    if (relevantDocuments.length === 0) {
+      taskManager.completeTask('retrieve', 'Aucun document pertinent trouvé');
+      return { documents: [], contextInfo: '' };
+    }
+
+    // Create context information
+    const documentTitles = relevantDocuments.map(doc => `"${doc.item.title}"`);
+    const contextInfo = `Contexte augmenté avec : ${documentTitles.join(', ')} (${relevantDocuments.length} document${relevantDocuments.length > 1 ? 's' : ''})`;
+
+    taskManager.completeTask('retrieve', `${relevantDocuments.length} document(s) pertinent(s) trouvé(s)`);
+
+    // Return relevant documents with their content
+    return {
+      documents: relevantDocuments.map(doc => ({
+        title: doc.item.title,
+        content: doc.item.content,
+        similarity: doc.similarity,
+        type: doc.item.type,
+        url: doc.item.url
+      })),
+      contextInfo
+    };
+
+  } catch (error) {
+    console.error('Error retrieving relevant documents:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Erreur inconnue lors de la récupération';
+    taskManager.errorTask('retrieve', `Erreur: ${errorMessage}`);
+    
+    // Return empty results on error to allow the conversation to continue
+    return { documents: [], contextInfo: '' };
+  }
+}
+
 export async function runStrategy(
   history: HistoryMessageType[],
   context: AttachmentType[] = [],
@@ -518,11 +628,52 @@ export async function runStrategy(
     StrategyRunInput.parse(strategyInput);
     taskManager.completeTask('connect', 'Connecté');
 
-    // Task 2: Analyze request
+    // Task 2: Retrieve relevant documents from knowledge base
+    const lastUserMessage = [...history].reverse().find(msg => msg.actor === 'user');
+    let augmentedContext = '';
+    let ragAgentMessage: HistoryMessageType | null = null;
+
+    if (lastUserMessage && lastUserMessage.content.type === 'formatted') {
+      const userQuery = lastUserMessage.content.blocks
+        .map(block => block.type === 'markdown' ? block.text : block.code)
+        .join(' ');
+
+      const projectId = lastUserMessage.chatId; // We'll use chatId to get the project, or use a default
+      
+      const { documents, contextInfo } = await retrieveRelevantDocuments(
+        userQuery,
+        'default', // For now, use default project - could be enhanced to get actual project
+        taskManager
+      );
+
+      if (documents.length > 0) {
+        // Create augmented context for the LLM
+        augmentedContext = documents.map(doc => 
+          `## ${doc.title}\n${doc.content}\n`
+        ).join('\n');
+
+        // Create agent message to inform the user about context augmentation
+        ragAgentMessage = {
+          id: crypto.randomUUID(),
+          actor: 'agent',
+          content: {
+            type: 'formatted',
+            blocks: [{
+              type: 'markdown',
+              text: `🔍 **${contextInfo}**\n\nJ'ai trouvé des documents pertinents dans votre base de connaissances pour enrichir ma réponse. Ces informations contextuelles m'aideront à vous fournir une réponse plus précise et personnalisée.`
+            } as MarkdownBlockType]
+          },
+          timestamp: new Date(),
+          chatId: lastUserMessage.chatId
+        };
+      }
+    }
+
+    // Task 3: Analyze request
     taskManager.startTask('analyze', 'Analyse de la requête...');
 
     // Build system prompt for structured output
-    const systemPrompt = `You are part of a composite AI system. You MUST respond with valid JSON that matches this exact schema:
+    let systemPrompt = `You are part of a composite AI system. You MUST respond with valid JSON that matches this exact schema:
 
     {
       "actor": "llm" | "agent" | "tool",
@@ -563,9 +714,21 @@ export async function runStrategy(
     
     Respond to the user's message naturally, but in the structured format above.`;
 
-    // Convert history to chat messages for Ollama
+    // Append augmented context if available
+    if (augmentedContext) {
+      systemPrompt += `
+
+ADDITIONAL CONTEXT FROM KNOWLEDGE BASE:
+The following information has been retrieved from the user's knowledge base and may be relevant to their query. Use this context to inform your response if relevant, but don't mention that you're using external context unless specifically asked:
+
+${augmentedContext}
+
+Use this contextual information to provide a more informed and personalized response.`;
+    }
+
+    // Convert history to chat messages for Ollama (including agent messages)
     const chatMessages = history
-      .filter(msg => ['user', 'llm'].includes(msg.actor))
+      .filter(msg => ['user', 'llm', 'agent'].includes(msg.actor))
       .map(msg => {
         let content = '';
         
@@ -591,7 +754,7 @@ export async function runStrategy(
 
     taskManager.completeTask('analyze', 'Requête analysée');
 
-    // Tasks 3-5: Will be managed by the LLM call with live streaming analysis
+    // Tasks 4-6: Will be managed by the LLM call with live streaming analysis
     taskManager.startTask('identify-actor', 'Identification en cours...');
 
     // Attempt LLM call with live streaming analysis and retries
@@ -613,13 +776,24 @@ export async function runStrategy(
       };
     }
 
-    return {
+    // If we have a RAG agent message, we need to handle it differently
+    // In a real implementation, we would return the agent message first, then the LLM response
+    // For now, we'll return the LLM response and let the calling code handle the agent message separately
+    
+    const llmResponse: HistoryMessageType = {
       id: crypto.randomUUID(),
       actor: parsedResponse.actor,
       content: parsedResponse.content,
       timestamp: new Date(),
       chatId: history[history.length - 1]?.chatId || ''
     };
+
+    // Store the RAG agent message for the calling code to handle
+    if (ragAgentMessage) {
+      (llmResponse as any).ragAgentMessage = ragAgentMessage;
+    }
+
+    return llmResponse;
 
   } catch (error) {
     console.error('Strategy execution error:', error);
