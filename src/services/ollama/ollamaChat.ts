@@ -26,9 +26,9 @@ export async function chat(messages: ChatMessage[], model?: string, think?: bool
     };
 
     // Add think parameter if specified
-    if (think !== undefined) {
-      chatOptions.think = think;
-    }
+    // if (think !== undefined) {
+    //   chatOptions.think = think;
+    // } 
     
     const response = await ollama.chat(chatOptions);
     
@@ -82,9 +82,9 @@ export async function chatStream(messages: ChatMessage[], model?: string, think?
     };
 
     // Add think parameter if specified
-    if (think !== undefined) {
-      chatOptions.think = think;
-    }
+    // if (think !== undefined) {
+    //   chatOptions.think = think; 
+    // }
     
     const response = await ollama.chat(chatOptions);
     
