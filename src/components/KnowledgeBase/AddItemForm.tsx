@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
-import { Link, FileText } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Link, FileText, Download, AlertTriangle } from 'lucide-react';
 import { Button } from '../UI/Button';
 import { Input } from '../UI/Input';
 
 interface AddItemFormProps {
-  onSubmit: (type: 'url' | 'text', title: string, urlOrContent: string) => void;
+  onSubmit: (type: 'url' | 'text', title: string, url?: string, content?: string) => void;
   onCancel: () => void;
 }
 
@@ -13,14 +13,153 @@ export function AddItemForm({ onSubmit, onCancel }: AddItemFormProps) {
   const [title, setTitle] = useState('');
   const [url, setUrl] = useState('');
   const [content, setContent] = useState('');
+  const [isFetchingUrl, setIsFetchingUrl] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
+  // Reset form when type changes
+  useEffect(() => {
+    setContent('');
+    setFetchError(null);
+  }, [type]);
+
+  const extractTextFromHTML = (html: string): string => {
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, 'text/html');
+      
+      // Remove script and style elements
+      const scripts = doc.querySelectorAll('script, style, nav, header, footer, aside');
+      scripts.forEach(el => el.remove());
+      
+      // Try to find main content areas first
+      const contentSelectors = [
+        'main',
+        'article',
+        '[role="main"]',
+        '.content',
+        '.main-content',
+        '.post-content',
+        '.entry-content',
+        '#content'
+      ];
+      
+      let mainContent = null;
+      for (const selector of contentSelectors) {
+        const element = doc.querySelector(selector);
+        if (element) {
+          mainContent = element;
+          break;
+        }
+      }
+      
+      // If no main content found, use body
+      const contentElement = mainContent || doc.body;
+      
+      if (!contentElement) {
+        return 'Could not extract content from this page.';
+      }
+      
+      // Get text content and clean it up
+      let text = contentElement.textContent || '';
+      
+      // Clean up whitespace and empty lines
+      text = text
+        .replace(/\s+/g, ' ') // Replace multiple spaces with single space
+        .replace(/\n\s*\n/g, '\n') // Replace multiple newlines with single newline
+        .trim();
+      
+      return text || 'No readable content found on this page.';
+    } catch (error) {
+      console.error('Error parsing HTML:', error);
+      return 'Error extracting content from the page.';
+    }
+  };
+
+  const handleFetchUrl = async () => {
+    if (!url.trim()) return;
+    
+    setIsFetchingUrl(true);
+    setFetchError(null);
+    
+    try {
+      // Validate URL format
+      let fetchUrl = url.trim();
+      if (!fetchUrl.startsWith('http://') && !fetchUrl.startsWith('https://')) {
+        fetchUrl = 'https://' + fetchUrl;
+      }
+      
+      const urlObj = new URL(fetchUrl);
+      
+      // Update the URL field with the normalized URL
+      setUrl(fetchUrl);
+      
+      const response = await fetch(fetchUrl, {
+        method: 'GET',
+        headers: {
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'User-Agent': 'Mozilla/5.0 (compatible; Knowledge Base Bot)'
+        },
+        mode: 'cors' // This will likely fail for most external sites due to CORS
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      const html = await response.text();
+      const extractedText = extractTextFromHTML(html);
+      
+      // Set the extracted content
+      setContent(extractedText);
+      
+      // Auto-generate title if not provided
+      if (!title.trim()) {
+        try {
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(html, 'text/html');
+          const pageTitle = doc.querySelector('title')?.textContent?.trim();
+          if (pageTitle) {
+            setTitle(pageTitle.slice(0, 100)); // Limit title length
+          } else {
+            setTitle(urlObj.hostname);
+          }
+        } catch {
+          setTitle(urlObj.hostname);
+        }
+      }
+      
+    } catch (error) {
+      console.error('Error fetching URL:', error);
+      
+      let errorMessage = 'Failed to fetch content from URL.';
+      
+      if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
+        errorMessage = 'Unable to fetch content due to CORS restrictions. This is a common limitation when fetching content from external websites directly in the browser.';
+      } else if (error instanceof Error) {
+        if (error.message.includes('Invalid URL')) {
+          errorMessage = 'Please enter a valid URL (e.g., https://example.com)';
+        } else if (error.message.includes('HTTP')) {
+          errorMessage = `Server error: ${error.message}`;
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      
+      setFetchError(errorMessage);
+    } finally {
+      setIsFetchingUrl(false);
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
     if (type === 'url' && url.trim() && title.trim()) {
-      onSubmit('url', title.trim(), url.trim());
+      // For URL type, pass both URL and content (if fetched)
+      onSubmit('url', title.trim(), url.trim(), content.trim() || undefined);
     } else if (type === 'text' && title.trim() && content.trim()) {
-      onSubmit('text', title.trim(), content.trim());
+      // For text type, only pass content
+      onSubmit('text', title.trim(), undefined, content.trim());
     }
     
     // Reset form
@@ -28,6 +167,15 @@ export function AddItemForm({ onSubmit, onCancel }: AddItemFormProps) {
     setUrl('');
     setContent('');
     setType('url');
+    setFetchError(null);
+  };
+
+  const isFormValid = () => {
+    if (type === 'url') {
+      return title.trim() && url.trim();
+    } else {
+      return title.trim() && content.trim();
+    }
   };
 
   return (
@@ -64,14 +212,65 @@ export function AddItemForm({ onSubmit, onCancel }: AddItemFormProps) {
       />
 
       {type === 'url' ? (
-        <Input
-          label="🔗 URL"
-          type="url"
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          placeholder="https://awesome-website.com"
-          required
-        />
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Input
+              label="🔗 URL"
+              type="url"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://awesome-website.com"
+              required
+            />
+            
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              icon={Download}
+              onClick={handleFetchUrl}
+              disabled={!url.trim() || isFetchingUrl}
+              loading={isFetchingUrl}
+              className="w-full"
+            >
+              {isFetchingUrl ? 'Fetching content...' : '📥 Fetch Content from URL'}
+            </Button>
+          </div>
+
+          {fetchError && (
+            <div className="bg-red-50 border-2 border-red-200 rounded-xl p-4">
+              <div className="flex items-start space-x-3">
+                <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-red-800 font-semibold text-sm">Failed to fetch content</p>
+                  <p className="text-red-700 text-sm mt-1">{fetchError}</p>
+                  <p className="text-red-600 text-xs mt-2">
+                    <strong>Tip:</strong> You can still save the URL and manually add content below.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Content preview/edit area for URL type */}
+          <div className="space-y-2">
+            <label className="block text-sm font-semibold text-transparent bg-gradient-to-r from-teal-700 to-purple-700 bg-clip-text">
+              📝 Content {content ? '(Fetched - you can edit)' : '(Optional - will be fetched from URL)'}
+            </label>
+            <textarea
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              placeholder={content ? "Edit the fetched content..." : "Content will appear here after fetching, or you can add it manually..."}
+              rows={8}
+              className="
+                block w-full px-4 py-3 border-2 border-gray-300 rounded-xl shadow-sm
+                placeholder-gray-400 focus:outline-none focus:ring-4 focus:ring-teal-200 focus:border-teal-400
+                bg-gradient-to-r from-white to-cyan-25 text-gray-800 font-medium
+                transition-all duration-200 hover:shadow-md
+              "
+            />
+          </div>
+        </div>
       ) : (
         <div className="space-y-2">
           <label className="block text-sm font-semibold text-transparent bg-gradient-to-r from-teal-700 to-purple-700 bg-clip-text">
@@ -99,7 +298,7 @@ export function AddItemForm({ onSubmit, onCancel }: AddItemFormProps) {
         </Button>
         <Button 
           type="submit" 
-          disabled={!title.trim() || (type === 'url' ? !url.trim() : !content.trim())}
+          disabled={!isFormValid() || isFetchingUrl}
           className="px-8"
         >
           ✨ Add Item

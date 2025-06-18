@@ -26,21 +26,22 @@ export function KnowledgeBase({ projectId }: KnowledgeBaseProps) {
     (item.content && item.content.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
-  const handleAddItem = async (type: 'url' | 'text', title: string, urlOrContent: string) => {
+  const handleAddItem = async (type: 'url' | 'text', title: string, url?: string, content?: string) => {
     try {
       if (type === 'url') {
         await addItem({
           projectId,
           type: 'url',
           title,
-          url: urlOrContent
+          url: url || '',
+          content: content || undefined // Only include content if it was fetched/provided
         });
       } else {
         await addItem({
           projectId,
           type: 'text',
           title,
-          content: urlOrContent
+          content: content || ''
         });
       }
       setIsAddModalOpen(false);
