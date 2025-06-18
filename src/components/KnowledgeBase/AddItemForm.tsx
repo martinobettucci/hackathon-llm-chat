@@ -93,21 +93,27 @@ export function AddItemForm({ onSubmit, onCancel }: AddItemFormProps) {
       // Update the URL field with the normalized URL
       setUrl(fetchUrl);
       
-      const response = await fetch(fetchUrl, {
+      // Use CORS proxy to fetch the content
+      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(fetchUrl)}`;
+      
+      const response = await fetch(proxyUrl, {
         method: 'GET',
         headers: {
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'User-Agent': 'Mozilla/5.0 (compatible; Knowledge Base Bot)'
-        },
-        mode: 'cors' // This will likely fail for most external sites due to CORS
+          'Accept': 'application/json',
+        }
       });
       
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
       
-      const html = await response.text();
-      const extractedText = extractTextFromHTML(html);
+      const data = await response.json();
+      
+      if (!data.contents) {
+        throw new Error('No content received from the URL');
+      }
+      
+      const extractedText = extractTextFromHTML(data.contents);
       
       // Set the extracted content
       setContent(extractedText);
@@ -116,7 +122,7 @@ export function AddItemForm({ onSubmit, onCancel }: AddItemFormProps) {
       if (!title.trim()) {
         try {
           const parser = new DOMParser();
-          const doc = parser.parseFromString(html, 'text/html');
+          const doc = parser.parseFromString(data.contents, 'text/html');
           const pageTitle = doc.querySelector('title')?.textContent?.trim();
           if (pageTitle) {
             setTitle(pageTitle.slice(0, 100)); // Limit title length
@@ -134,12 +140,14 @@ export function AddItemForm({ onSubmit, onCancel }: AddItemFormProps) {
       let errorMessage = 'Failed to fetch content from URL.';
       
       if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
-        errorMessage = 'Unable to fetch content due to CORS restrictions. This is a common limitation when fetching content from external websites directly in the browser.';
+        errorMessage = 'Unable to connect to the proxy service. Please check your internet connection and try again.';
       } else if (error instanceof Error) {
         if (error.message.includes('Invalid URL')) {
           errorMessage = 'Please enter a valid URL (e.g., https://example.com)';
         } else if (error.message.includes('HTTP')) {
           errorMessage = `Server error: ${error.message}`;
+        } else if (error.message.includes('No content received')) {
+          errorMessage = 'The URL appears to be valid but no content could be extracted. This might be a dynamic page or the content might be protected.';
         } else {
           errorMessage = error.message;
         }
