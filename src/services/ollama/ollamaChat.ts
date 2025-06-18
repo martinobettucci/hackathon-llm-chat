@@ -6,6 +6,18 @@ export interface ChatMessage {
   content: string;
 }
 
+function stripSelfRepeatingPrefix(response: string, maxPrefix = 20): string {
+  for (let len = maxPrefix; len >= 1; len--) {
+    const prefix = response.slice(0, len)
+    const doubled = prefix + prefix
+
+    if (response.startsWith(doubled)) {
+      return response.slice(len)
+    }
+  }
+  return response
+}
+
 export async function chat(messages: ChatMessage[], model?: string, think?: boolean): Promise<string> {
   try {
     const selectedModel = model || await getAvailableModel();
