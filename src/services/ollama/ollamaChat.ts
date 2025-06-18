@@ -42,7 +42,8 @@ export async function chat(messages: ChatMessage[], model?: string, think?: bool
       chatOptions.think = think;
     } 
     
-    const response = await ollama.chat(chatOptions);
+    const rawResponse = await ollama.chat(chatOptions);
+    const response = think ? stripSelfRepeatingPrefix(rawResponse) : rawResponse
     
     // Reset service unavailable flag on successful response
     setServiceUnavailable(false);
