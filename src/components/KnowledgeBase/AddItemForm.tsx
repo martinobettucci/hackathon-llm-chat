@@ -7,9 +7,10 @@ import { OllamaService } from '../../services/ollama';
 interface AddItemFormProps {
   onSubmit: (type: 'url' | 'text', title: string, url?: string, content?: string) => void;
   onCancel: () => void;
+  isSubmitting?: boolean;
 }
 
-export function AddItemForm({ onSubmit, onCancel }: AddItemFormProps) {
+export function AddItemForm({ onSubmit, onCancel, isSubmitting = false }: AddItemFormProps) {
   const [type, setType] = useState<'url' | 'text'>('url');
   const [title, setTitle] = useState('');
   const [url, setUrl] = useState('');
@@ -251,6 +252,7 @@ export function AddItemForm({ onSubmit, onCancel }: AddItemFormProps) {
   const hasContent = content.trim().length > 0;
   const hasTitle = title.trim().length > 0;
   const showTitleGenerationHint = hasContent && !hasTitle && !isContentCleaned;
+  const isAnyOperationInProgress = isFetchingUrl || isCleaningContent || isSubmitting;
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
@@ -262,6 +264,7 @@ export function AddItemForm({ onSubmit, onCancel }: AddItemFormProps) {
           onClick={() => setType('url')}
           icon={Link}
           className="flex-1"
+          disabled={isSubmitting}
         >
           🔗 URL
         </Button>
@@ -272,6 +275,7 @@ export function AddItemForm({ onSubmit, onCancel }: AddItemFormProps) {
           onClick={() => setType('text')}
           icon={FileText}
           className="flex-1"
+          disabled={isSubmitting}
         >
           📝 Text
         </Button>
@@ -298,6 +302,7 @@ export function AddItemForm({ onSubmit, onCancel }: AddItemFormProps) {
           }}
           placeholder="Enter a catchy title..."
           required
+          disabled={isSubmitting}
         />
       </div>
 
@@ -311,6 +316,7 @@ export function AddItemForm({ onSubmit, onCancel }: AddItemFormProps) {
               onChange={(e) => setUrl(e.target.value)}
               placeholder="https://awesome-website.com"
               required
+              disabled={isSubmitting}
             />
             
             <Button
@@ -319,7 +325,7 @@ export function AddItemForm({ onSubmit, onCancel }: AddItemFormProps) {
               size="sm"
               icon={Download}
               onClick={handleFetchUrl}
-              disabled={!url.trim() || isFetchingUrl}
+              disabled={!url.trim() || isAnyOperationInProgress}
               loading={isFetchingUrl}
               className="w-full"
             >
@@ -363,7 +369,7 @@ export function AddItemForm({ onSubmit, onCancel }: AddItemFormProps) {
                     size="sm"
                     icon={Sparkles}
                     onClick={handleCleanContent}
-                    disabled={isCleaningContent}
+                    disabled={isAnyOperationInProgress}
                     loading={isCleaningContent}
                     title={hasTitle ? "Clean and organize content with AI" : "Clean content and generate title with AI"}
                   >
@@ -381,11 +387,13 @@ export function AddItemForm({ onSubmit, onCancel }: AddItemFormProps) {
               }}
               placeholder={content ? "Edit the fetched content..." : "Content will appear here after fetching, or you can add it manually..."}
               rows={8}
+              disabled={isSubmitting}
               className="
                 block w-full px-4 py-3 border-2 border-gray-300 rounded-xl shadow-sm
                 placeholder-gray-400 focus:outline-none focus:ring-4 focus:ring-teal-200 focus:border-teal-400
                 bg-gradient-to-r from-white to-cyan-25 text-gray-800 font-medium
                 transition-all duration-200 hover:shadow-md
+                disabled:opacity-50 disabled:cursor-not-allowed
               "
             />
             
@@ -423,7 +431,7 @@ export function AddItemForm({ onSubmit, onCancel }: AddItemFormProps) {
                   size="sm"
                   icon={Sparkles}
                   onClick={handleCleanContent}
-                  disabled={isCleaningContent}
+                  disabled={isAnyOperationInProgress}
                   loading={isCleaningContent}
                   title={hasTitle ? "Clean and organize content with AI" : "Clean content and generate title with AI"}
                 >
@@ -442,11 +450,13 @@ export function AddItemForm({ onSubmit, onCancel }: AddItemFormProps) {
             placeholder="Write your amazing content here..."
             rows={8}
             required
+            disabled={isSubmitting}
             className="
               block w-full px-4 py-3 border-2 border-gray-300 rounded-xl shadow-sm
               placeholder-gray-400 focus:outline-none focus:ring-4 focus:ring-teal-200 focus:border-teal-400
               bg-gradient-to-r from-white to-cyan-25 text-gray-800 font-medium
               transition-all duration-200 hover:shadow-md
+              disabled:opacity-50 disabled:cursor-not-allowed
             "
           />
           
@@ -465,7 +475,7 @@ export function AddItemForm({ onSubmit, onCancel }: AddItemFormProps) {
       )}
 
       {/* AI Content Enhancement Info */}
-      {hasContent && !isContentCleaned && (
+      {hasContent && !isContentCleaned && !isSubmitting && (
         <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 border-2 border-blue-200">
           <div className="flex items-start space-x-3">
             <Sparkles className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
@@ -487,8 +497,23 @@ export function AddItemForm({ onSubmit, onCancel }: AddItemFormProps) {
         </div>
       )}
 
+      {/* Processing notification */}
+      {isSubmitting && (
+        <div className="bg-gradient-to-r from-teal-50 to-cyan-50 rounded-xl p-4 border-2 border-teal-200">
+          <div className="flex items-start space-x-3">
+            <Loader2 className="w-5 h-5 text-teal-600 animate-spin flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-teal-800 font-semibold text-sm">🤖 AI Processing in Progress</p>
+              <p className="text-teal-700 text-sm mt-1">
+                Your content is being enhanced with AI curation, organized into searchable chunks, and processed with embeddings for optimal search capabilities.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Title generation success indicator */}
-      {isTitleGenerated && isContentCleaned && (
+      {isTitleGenerated && isContentCleaned && !isSubmitting && (
         <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl p-4 border-2 border-green-200">
           <div className="flex items-start space-x-3">
             <Wand2 className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
@@ -503,15 +528,22 @@ export function AddItemForm({ onSubmit, onCancel }: AddItemFormProps) {
       )}
 
       <div className="flex justify-end space-x-4 pt-6">
-        <Button type="button" variant="secondary" onClick={onCancel} className="px-6">
+        <Button 
+          type="button" 
+          variant="secondary" 
+          onClick={onCancel} 
+          className="px-6"
+          disabled={isSubmitting}
+        >
           Cancel
         </Button>
         <Button 
           type="submit" 
-          disabled={!isFormValid() || isFetchingUrl || isCleaningContent}
+          disabled={!isFormValid() || isAnyOperationInProgress}
+          loading={isSubmitting}
           className="px-8"
         >
-          ✨ Add Item
+          {isSubmitting ? 'Processing...' : '✨ Add Item'}
         </Button>
       </div>
     </form>

@@ -9,13 +9,15 @@ interface KnowledgeBaseItemCardProps {
   onDelete: (item: KnowledgeBaseItem) => void;
   onPreview: (item: KnowledgeBaseItem) => void;
   onRegenerateEmbeddings?: (item: KnowledgeBaseItem) => void;
+  isRegenerating?: boolean;
 }
 
 export function KnowledgeBaseItemCard({ 
   item, 
   onDelete, 
   onPreview, 
-  onRegenerateEmbeddings 
+  onRegenerateEmbeddings,
+  isRegenerating = false
 }: KnowledgeBaseItemCardProps) {
   const hasEmbeddings = item.embeddings && item.embeddings.length > 0;
   const hasContent = item.content && item.content.trim().length > 0;
@@ -101,6 +103,7 @@ export function KnowledgeBaseItemCard({
             icon={Eye}
             onClick={() => onPreview(item)}
             className="h-8 px-3"
+            disabled={isRegenerating}
           >
             View
           </Button>
@@ -114,8 +117,10 @@ export function KnowledgeBaseItemCard({
               onClick={() => onRegenerateEmbeddings(item)}
               className="h-8 px-3"
               title="Generate AI embeddings for search"
+              disabled={isRegenerating}
+              loading={isRegenerating}
             >
-              Generate AI
+              {isRegenerating ? 'Processing...' : 'Generate AI'}
             </Button>
           )}
         </div>
@@ -126,6 +131,7 @@ export function KnowledgeBaseItemCard({
           icon={Trash2}
           onClick={() => onDelete(item)}
           className="h-8 px-3"
+          disabled={isRegenerating}
         >
           Delete
         </Button>
