@@ -69,9 +69,18 @@ export async function runStrategy(
         
         taskManager.completeTask('user-intent', `Intention extraite: "${extractedUserIntent.substring(0, 50)}${extractedUserIntent.length > 50 ? '...' : ''}"`);
         
+        // 📊 LOG: Rapport d'extraction de l'intention utilisateur
+        console.log('📋 [USER-INTENT] Rapport d\'extraction de l\'intention utilisateur:');
+        console.log(`   📝 Intention extraite: "${extractedUserIntent}"`);
+        console.log(`   📏 Longueur: ${extractedUserIntent.length} caractères`);
+        console.log(`   🔄 Messages analysés: ${chatHistory.length} (${chatHistory.filter(m => m.role === 'user').length} utilisateur, ${chatHistory.filter(m => m.role === 'assistant').length} assistant)`);
+        
       } catch (error) {
         console.error('Error extracting user intent:', error);
         taskManager.errorTask('user-intent', 'Erreur d\'extraction d\'intention');
+        
+        // 🚨 LOG: Erreur d'extraction de l'intention
+        console.error('❌ [USER-INTENT] Échec d\'extraction de l\'intention:', error instanceof Error ? error.message : 'Erreur inconnue');
         
         // Fallback to the last user message
         if (lastUserMessage.content.type === 'formatted') {
@@ -79,6 +88,8 @@ export async function runStrategy(
             .map(block => block.type === 'markdown' ? block.text : block.code)
             .join(' ');
         }
+        
+        console.log(`   🔄 [USER-INTENT] Fallback vers le dernier message utilisateur: "${extractedUserIntent}"`);
       }
     } else if (lastUserMessage) {
       // No conversation history, use the current message directly
@@ -91,6 +102,10 @@ export async function runStrategy(
       }
       
       taskManager.completeTask('user-intent', 'Message actuel utilisé');
+      
+      // 📊 LOG: Pas d'historique de conversation
+      console.log('📋 [USER-INTENT] Message unique (pas d\'historique de conversation):');
+      console.log(`   📝 Intention: "${extractedUserIntent}"`);
     }
 
     // Task 3: Advanced reasoning decision

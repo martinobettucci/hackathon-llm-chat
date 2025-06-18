@@ -55,6 +55,14 @@ export async function retrieveRelevantDocuments(
 
     if (knowledgeChunks.length === 0) {
       taskManager.completeTask('retrieve', 'Aucun chunk avec embeddings trouvé');
+      
+      // 📊 LOG: Aucun chunk trouvé
+      console.log('📚 [RAG] Rapport de récupération - Aucun chunk disponible:');
+      console.log(`   🎯 Requête: "${userQuery}"`);
+      console.log(`   📁 Projet: ${projectId}`);
+      console.log(`   📦 Chunks disponibles: 0`);
+      console.log(`   🔍 Seuil de similarité: ${similarityThreshold.toFixed(2)}`);
+      
       return { documents: [], contextInfo: '' };
     }
 
@@ -79,6 +87,21 @@ export async function retrieveRelevantDocuments(
 
     if (relevantChunks.length === 0) {
       taskManager.completeTask('retrieve', `Aucun chunk au-dessus du seuil ${similarityThreshold.toFixed(2)}`);
+      
+      // 📊 LOG: Aucun chunk pertinent trouvé
+      const allSimilarities = chunkSimilarities.map(cs => cs.similarity).sort((a, b) => b - a);
+      const maxSimilarity = allSimilarities[0] || 0;
+      const avgSimilarity = allSimilarities.length > 0 ? allSimilarities.reduce((a, b) => a + b, 0) / allSimilarities.length : 0;
+      
+      console.log('📚 [RAG] Rapport de récupération - Aucun chunk pertinent:');
+      console.log(`   🎯 Requête: "${userQuery}"`);
+      console.log(`   📁 Projet: ${projectId}`);
+      console.log(`   📦 Chunks analysés: ${knowledgeChunks.length}`);
+      console.log(`   🔍 Seuil de similarité: ${similarityThreshold.toFixed(2)}`);
+      console.log(`   📈 Similarité maximale trouvée: ${maxSimilarity.toFixed(3)}`);
+      console.log(`   📊 Similarité moyenne: ${avgSimilarity.toFixed(3)}`);
+      console.log(`   ❌ Chunks au-dessus du seuil: 0`);
+      
       return { documents: [], contextInfo: '' };
     }
 
@@ -113,12 +136,41 @@ export async function retrieveRelevantDocuments(
       };
     });
 
+    // 📊 LOG: Rapport détaillé de récupération RAG
+    console.log('📚 [RAG] Rapport de récupération réussie:');
+    console.log(`   🎯 Requête: "${userQuery}"`);
+    console.log(`   📁 Projet: ${projectId}`);
+    console.log(`   📦 Chunks analysés: ${knowledgeChunks.length}`);
+    console.log(`   🔍 Seuil de similarité: ${similarityThreshold.toFixed(2)}`);
+    console.log(`   ✅ Chunks sélectionnés: ${relevantChunks.length}`);
+    console.log(`   📄 Documents uniques: ${uniqueDocuments}`);
+    console.log(`   📊 Statistiques de similarité:`);
+    
+    relevantChunks.forEach((rc, index) => {
+      const doc = documents[index];
+      const contentPreview = doc.content.length > 100 ? doc.content.substring(0, 100) + '...' : doc.content;
+      console.log(`     ${index + 1}. "${doc.title}" (${doc.similarity.toFixed(3)})`);
+      console.log(`        📄 Document parent: ${doc.parentDocumentTitle || 'N/A'}`);
+      console.log(`        📦 Section: ${doc.chunkOrder + 1}`);
+      console.log(`        📝 Aperçu: "${contentPreview.replace(/\n/g, ' ')}"`);
+      console.log(`        📏 Taille: ${doc.content.length} caractères`);
+    });
+    
+    console.log(`   🏷️ Documents source: ${documentTitles.join(', ')}`);
+    console.log(`   📋 Contexte généré: "${contextInfo}"`);
+
     return { documents, contextInfo };
 
   } catch (error) {
     console.error('Error retrieving relevant documents:', error);
     const errorMessage = error instanceof Error ? error.message : 'Erreur inconnue lors de la récupération';
     taskManager.errorTask('retrieve', `Erreur: ${errorMessage}`);
+    
+    // 🚨 LOG: Erreur de récupération RAG
+    console.error('❌ [RAG] Erreur lors de la récupération:', errorMessage);
+    console.log(`   🎯 Requête: "${userQuery}"`);
+    console.log(`   📁 Projet: ${projectId}`);
+    console.log(`   🔍 Seuil configuré: ${getSimilarityThreshold().toFixed(2)}`);
     
     // Return empty results on error to allow the conversation to continue
     return { documents: [], contextInfo: '' };
