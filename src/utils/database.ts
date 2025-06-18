@@ -85,6 +85,22 @@ export class ChatDatabase extends Dexie {
       });
     });
 
+    // Version 5: Add similarity threshold to settings
+    this.version(5).stores({
+      chats: 'id, title, projectId, createdAt, updatedAt, prefersStructured',
+      messages: 'id, chatId, actor, timestamp',
+      projects: 'id, name, createdAt, updatedAt, isDefault',
+      knowledgeBase: 'id, projectId, type, title, createdAt, embeddings',
+      settings: 'theme, selectedGenerationModel, selectedEmbeddingModel, similarityThreshold'
+    }).upgrade(trans => {
+      // Add similarity threshold to existing settings
+      return trans.table('settings').toCollection().modify((settings: any) => {
+        if (settings.similarityThreshold === undefined) {
+          settings.similarityThreshold = 0.7; // Default value
+        }
+      });
+    });
+
     this.on('ready', this.initializeDefaults.bind(this));
   }
 
@@ -109,7 +125,8 @@ export class ChatDatabase extends Dexie {
         selectedGenerationModel: undefined, // Will use system default
         selectedEmbeddingModel: undefined, // Will use system default
         temperature: 0.7,
-        maxTokens: 2048
+        maxTokens: 2048,
+        similarityThreshold: 0.7
       });
     }
   }

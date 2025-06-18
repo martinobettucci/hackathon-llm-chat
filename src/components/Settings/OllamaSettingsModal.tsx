@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Server, TestTube, RotateCcw, CheckCircle, XCircle, Loader2, Bot, Zap } from 'lucide-react';
+import { Server, TestTube, RotateCcw, CheckCircle, XCircle, Loader2, Bot, Zap, Search } from 'lucide-react';
 import { Modal } from '../UI/Modal';
 import { Input } from '../UI/Input';
 import { Button } from '../UI/Button';
+import { Slider } from '../UI/Slider';
 import { ModelSelector } from './ModelSelector';
 import { 
   getCurrentOllamaHost, 
@@ -21,6 +22,13 @@ import {
   getDefaultEmbeddingModel,
   OllamaService 
 } from '../../services/ollama';
+import { 
+  getSimilarityThreshold, 
+  setSimilarityThreshold, 
+  getDefaultSimilarityThreshold,
+  isUsingDefaultSimilarityThreshold,
+  resetSimilarityThreshold
+} from '../../services/settingsService';
 
 interface OllamaSettingsModalProps {
   isOpen: boolean;
@@ -37,6 +45,7 @@ export function OllamaSettingsModal({ isOpen, onClose }: OllamaSettingsModalProp
   const [customUrl, setCustomUrl] = useState('');
   const [selectedGenerationModelState, setSelectedGenerationModelState] = useState<string | null>(null);
   const [selectedEmbeddingModelState, setSelectedEmbeddingModelState] = useState<string | null>(null);
+  const [similarityThreshold, setSimilarityThresholdState] = useState(0.7);
   const [availableGenerationModels, setAvailableGenerationModels] = useState<string[]>([]);
   const [availableEmbeddingModels, setAvailableEmbeddingModels] = useState<string[]>([]);
   const [isTesting, setIsTesting] = useState(false);
@@ -48,9 +57,12 @@ export function OllamaSettingsModal({ isOpen, onClose }: OllamaSettingsModalProp
       const currentHost = getCurrentOllamaHost();
       const currentGenerationModel = getSelectedGenerationModel();
       const currentEmbeddingModel = getSelectedEmbeddingModel();
+      const currentSimilarityThreshold = getSimilarityThreshold();
+      
       setCustomUrl(currentHost);
       setSelectedGenerationModelState(currentGenerationModel);
       setSelectedEmbeddingModelState(currentEmbeddingModel);
+      setSimilarityThresholdState(currentSimilarityThreshold);
       setTestResult(null);
       setHasUnsavedChanges(false);
       setAvailableGenerationModels([]);
@@ -65,6 +77,11 @@ export function OllamaSettingsModal({ isOpen, onClose }: OllamaSettingsModalProp
     setTestResult(null);
     setAvailableGenerationModels([]);
     setAvailableEmbeddingModels([]);
+  };
+
+  const handleSimilarityThresholdChange = (value: number) => {
+    setSimilarityThresholdState(value);
+    setHasUnsavedChanges(true);
   };
 
   const handleTestConnection = async () => {
@@ -131,10 +148,18 @@ export function OllamaSettingsModal({ isOpen, onClose }: OllamaSettingsModalProp
     clearSelectedEmbeddingModel();
   };
 
+  const handleResetSimilarityThresholdToDefault = () => {
+    const defaultThreshold = getDefaultSimilarityThreshold();
+    setSimilarityThresholdState(defaultThreshold);
+    resetSimilarityThreshold();
+    setHasUnsavedChanges(true);
+  };
+
   const handleSave = async () => {
     if (!customUrl.trim()) return;
     
     setOllamaHost(customUrl.trim());
+    setSimilarityThreshold(similarityThreshold);
     setHasUnsavedChanges(false);
     
     // Clear any previous test results when saving
@@ -146,8 +171,12 @@ export function OllamaSettingsModal({ isOpen, onClose }: OllamaSettingsModalProp
 
   const handleResetToDefault = () => {
     const defaultHost = getDefaultOllamaHost();
+    const defaultThreshold = getDefaultSimilarityThreshold();
+    
     setCustomUrl(defaultHost);
+    setSimilarityThresholdState(defaultThreshold);
     setOllamaHost(defaultHost);
+    resetSimilarityThreshold();
     setHasUnsavedChanges(false);
     setTestResult(null);
     setAvailableGenerationModels([]);
@@ -184,6 +213,8 @@ export function OllamaSettingsModal({ isOpen, onClose }: OllamaSettingsModalProp
     return 'border-gray-300 bg-gray-50';
   };
 
+  const hasSettingsChanges = hasUnsavedChanges || (similarityThreshold !== getSimilarityThreshold());
+
   return (
     <Modal isOpen={isOpen} onClose={handleClose} title="⚙️ Configuration Ollama" size="lg">
       <div className="space-y-6">
@@ -204,6 +235,9 @@ export function OllamaSettingsModal({ isOpen, onClose }: OllamaSettingsModalProp
           </p>
           <p className="text-sm text-purple-700">
             <strong>Modèle d'embedding:</strong> {selectedEmbeddingModelState || `${getDefaultEmbeddingModel()} (par défaut)`}
+          </p>
+          <p className="text-sm text-purple-700">
+            <strong>Seuil de similarité:</strong> {similarityThreshold.toFixed(2)} {isUsingDefaultSimilarityThreshold() ? '(par défaut)' : '(personnalisé)'}
           </p>
         </div>
 
@@ -234,9 +268,9 @@ export function OllamaSettingsModal({ isOpen, onClose }: OllamaSettingsModalProp
               size="sm"
               icon={RotateCcw}
               onClick={handleResetToDefault}
-              disabled={isUsingDefaultHost() && !hasUnsavedChanges}
+              disabled={isUsingDefaultHost() && isUsingDefaultSimilarityThreshold() && !hasUnsavedChanges}
             >
-              Réinitialiser
+              Réinitialiser tout
             </Button>
           </div>
         </div>
@@ -259,6 +293,55 @@ export function OllamaSettingsModal({ isOpen, onClose }: OllamaSettingsModalProp
             </div>
           </div>
         )}
+
+        {/* Knowledge Base Settings */}
+        <div className="bg-gradient-to-r from-cyan-50 to-teal-50 rounded-xl p-4 border-2 border-cyan-200">
+          <div className="flex items-center space-x-2 mb-4">
+            <Search className="w-5 h-5 text-cyan-600" />
+            <h4 className="font-semibold text-cyan-800">🔍 Paramètres de la Base de Connaissances</h4>
+          </div>
+          
+          <div className="space-y-4">
+            <Slider
+              label="🎯 Seuil de Similarité"
+              value={similarityThreshold}
+              onChange={handleSimilarityThresholdChange}
+              min={0}
+              max={1}
+              step={0.01}
+              hint="Plus le seuil est élevé, plus les documents doivent être similaires à la requête pour être inclus dans le contexte."
+            />
+            
+            <div className="flex items-center justify-between text-sm">
+              <div className="text-cyan-700">
+                <p><strong>Valeur actuelle:</strong> {similarityThreshold.toFixed(2)}</p>
+                <p><strong>Recommandé:</strong> 0.70 (équilibre précision/rappel)</p>
+              </div>
+              
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={RotateCcw}
+                onClick={handleResetSimilarityThresholdToDefault}
+                disabled={isUsingDefaultSimilarityThreshold()}
+              >
+                Par défaut
+              </Button>
+            </div>
+            
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <p className="text-blue-800 text-sm">
+                <strong>💡 Guide des valeurs:</strong>
+              </p>
+              <ul className="text-blue-700 text-xs mt-1 space-y-1">
+                <li>• <strong>0.80-1.00:</strong> Très strict - seuls les documents très similaires</li>
+                <li>• <strong>0.70-0.79:</strong> Équilibré - bon compromis (recommandé)</li>
+                <li>• <strong>0.50-0.69:</strong> Souple - plus de documents, moins de précision</li>
+                <li>• <strong>0.00-0.49:</strong> Très souple - beaucoup de bruit</li>
+              </ul>
+            </div>
+          </div>
+        </div>
 
         {/* Model Selection */}
         {testResult?.success && (
@@ -304,8 +387,10 @@ export function OllamaSettingsModal({ isOpen, onClose }: OllamaSettingsModalProp
             <li>• L'URL par défaut est : <code className="bg-cyan-100 px-1 rounded">{getDefaultOllamaHost()}</code></li>
             <li>• Le modèle de génération par défaut est : <code className="bg-cyan-100 px-1 rounded">{getDefaultGenerationModel()}</code></li>
             <li>• Le modèle d'embedding par défaut est : <code className="bg-cyan-100 px-1 rounded">{getDefaultEmbeddingModel()}</code></li>
+            <li>• Le seuil de similarité par défaut est : <code className="bg-cyan-100 px-1 rounded">{getDefaultSimilarityThreshold()}</code></li>
             <li>• Le modèle de génération est utilisé pour les conversations</li>
             <li>• Le modèle d'embedding est utilisé pour la recherche sémantique dans la base de connaissances</li>
+            <li>• Le seuil de similarité détermine quels documents sont inclus dans le contexte</li>
             <li>• Assurez-vous que votre serveur Ollama autorise les requêtes CORS</li>
             <li>• Testez toujours la connexion avant de sauvegarder</li>
           </ul>
@@ -318,9 +403,9 @@ export function OllamaSettingsModal({ isOpen, onClose }: OllamaSettingsModalProp
           </Button>
           <Button
             onClick={handleSave}
-            disabled={!customUrl.trim() || (!hasUnsavedChanges && !testResult?.success)}
+            disabled={!customUrl.trim() || (!hasSettingsChanges && !testResult?.success)}
           >
-            {hasUnsavedChanges ? 'Sauvegarder et tester' : 'Fermer'}
+            {hasSettingsChanges ? 'Sauvegarder et tester' : 'Fermer'}
           </Button>
         </div>
       </div>

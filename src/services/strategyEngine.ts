@@ -11,6 +11,7 @@ import {
 } from '../schema';
 import { OllamaService } from './ollama';
 import { db } from '../utils/database';
+import { getSimilarityThreshold } from './settingsService';
 
 // Task status system
 export interface StrategyTask {
@@ -532,11 +533,14 @@ async function retrieveRelevantDocuments(
   userQuery: string,
   projectId: string,
   taskManager: StrategyTaskManager,
-  topK: number = 3,
-  similarityThreshold: number = 0.7
+  topK: number = 3
 ): Promise<{ documents: any[], contextInfo: string }> {
   try {
     taskManager.startTask('retrieve', 'Recherche de documents pertinents...');
+
+    // Get similarity threshold from settings
+    const similarityThreshold = getSimilarityThreshold();
+    taskManager.updateTaskMessage('retrieve', `Seuil de similarité: ${similarityThreshold.toFixed(2)}`);
 
     // Generate embeddings for the user query
     taskManager.updateTaskMessage('retrieve', 'Génération des embeddings de la requête...');
@@ -575,13 +579,13 @@ async function retrieveRelevantDocuments(
       .slice(0, topK);
 
     if (relevantDocuments.length === 0) {
-      taskManager.completeTask('retrieve', 'Aucun document pertinent trouvé');
+      taskManager.completeTask('retrieve', `Aucun document au-dessus du seuil ${similarityThreshold.toFixed(2)}`);
       return { documents: [], contextInfo: '' };
     }
 
     // Create context information
     const documentTitles = relevantDocuments.map(doc => `"${doc.item.title}"`);
-    const contextInfo = `Contexte augmenté avec : ${documentTitles.join(', ')} (${relevantDocuments.length} document${relevantDocuments.length > 1 ? 's' : ''})`;
+    const contextInfo = `Contexte augmenté avec : ${documentTitles.join(', ')} (${relevantDocuments.length} document${relevantDocuments.length > 1 ? 's' : ''}, seuil: ${similarityThreshold.toFixed(2)})`;
 
     taskManager.completeTask('retrieve', `${relevantDocuments.length} document(s) pertinent(s) trouvé(s)`);
 

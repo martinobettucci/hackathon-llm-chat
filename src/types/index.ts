@@ -44,4 +44,5 @@ export interface AppSettings {
   selectedEmbeddingModel?: string;
   temperature: number;
   maxTokens: number;
+  similarityThreshold?: number;
 }
