@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link, FileText, Download, AlertTriangle, Sparkles, CheckCircle } from 'lucide-react';
+import { Link, FileText, Download, AlertTriangle, Sparkles, CheckCircle, Wand2 } from 'lucide-react';
 import { Button } from '../UI/Button';
 import { Input } from '../UI/Input';
 import { OllamaService } from '../../services/ollama';
@@ -19,6 +19,7 @@ export function AddItemForm({ onSubmit, onCancel }: AddItemFormProps) {
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [cleaningError, setCleaningError] = useState<string | null>(null);
   const [isContentCleaned, setIsContentCleaned] = useState(false);
+  const [isTitleGenerated, setIsTitleGenerated] = useState(false);
 
   // Reset form when type changes
   useEffect(() => {
@@ -26,6 +27,7 @@ export function AddItemForm({ onSubmit, onCancel }: AddItemFormProps) {
     setFetchError(null);
     setCleaningError(null);
     setIsContentCleaned(false);
+    setIsTitleGenerated(false);
   }, [type]);
 
   const extractTextFromHTML = (html: string): string => {
@@ -87,6 +89,7 @@ export function AddItemForm({ onSubmit, onCancel }: AddItemFormProps) {
     setIsFetchingUrl(true);
     setFetchError(null);
     setIsContentCleaned(false);
+    setIsTitleGenerated(false);
     
     try {
       // Validate URL format
@@ -173,9 +176,25 @@ export function AddItemForm({ onSubmit, onCancel }: AddItemFormProps) {
     setCleaningError(null);
     
     try {
-      const cleanedContent = await OllamaService.cleanAndOrganizeContent(content.trim(), title.trim() || undefined);
-      setContent(cleanedContent);
+      // Determine if we need to generate a title
+      const currentTitle = title.trim();
+      const needsTitle = !currentTitle;
+      
+      const result = await OllamaService.cleanAndOrganizeContent(
+        content.trim(), 
+        needsTitle ? undefined : currentTitle
+      );
+      
+      // Update content
+      setContent(result.content);
       setIsContentCleaned(true);
+      
+      // Update title if it was generated
+      if (result.title && needsTitle) {
+        setTitle(result.title);
+        setIsTitleGenerated(true);
+      }
+      
     } catch (error) {
       console.error('Error cleaning content:', error);
       
@@ -218,6 +237,7 @@ export function AddItemForm({ onSubmit, onCancel }: AddItemFormProps) {
     setFetchError(null);
     setCleaningError(null);
     setIsContentCleaned(false);
+    setIsTitleGenerated(false);
   };
 
   const isFormValid = () => {
@@ -229,6 +249,8 @@ export function AddItemForm({ onSubmit, onCancel }: AddItemFormProps) {
   };
 
   const hasContent = content.trim().length > 0;
+  const hasTitle = title.trim().length > 0;
+  const showTitleGenerationHint = hasContent && !hasTitle && !isContentCleaned;
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
@@ -255,13 +277,29 @@ export function AddItemForm({ onSubmit, onCancel }: AddItemFormProps) {
         </Button>
       </div>
 
-      <Input
-        label="✨ Title"
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
-        placeholder="Enter a catchy title..."
-        required
-      />
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <label className="block text-sm font-semibold text-transparent bg-gradient-to-r from-teal-700 to-purple-700 bg-clip-text">
+            ✨ Title
+          </label>
+          {isTitleGenerated && (
+            <div className="flex items-center space-x-1 text-green-600">
+              <Wand2 className="w-4 h-4" />
+              <span className="text-xs font-medium">AI Generated</span>
+            </div>
+          )}
+        </div>
+        
+        <Input
+          value={title}
+          onChange={(e) => {
+            setTitle(e.target.value);
+            setIsTitleGenerated(false); // Reset generated status when manually edited
+          }}
+          placeholder="Enter a catchy title..."
+          required
+        />
+      </div>
 
       {type === 'url' ? (
         <div className="space-y-4">
@@ -327,9 +365,9 @@ export function AddItemForm({ onSubmit, onCancel }: AddItemFormProps) {
                     onClick={handleCleanContent}
                     disabled={isCleaningContent}
                     loading={isCleaningContent}
-                    title="Clean and organize content with AI"
+                    title={hasTitle ? "Clean and organize content with AI" : "Clean content and generate title with AI"}
                   >
-                    {isCleaningContent ? 'Cleaning...' : '✨ Clean with AI'}
+                    {isCleaningContent ? 'Enhancing...' : hasTitle ? '✨ Clean with AI' : '🪄 Enhance & Title'}
                   </Button>
                 </div>
               )}
@@ -356,7 +394,7 @@ export function AddItemForm({ onSubmit, onCancel }: AddItemFormProps) {
                 <div className="flex items-start space-x-2">
                   <AlertTriangle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
                   <div>
-                    <p className="text-red-800 font-semibold text-xs">AI Cleaning Failed</p>
+                    <p className="text-red-800 font-semibold text-xs">AI Enhancement Failed</p>
                     <p className="text-red-700 text-xs mt-1">{cleaningError}</p>
                   </div>
                 </div>
@@ -387,9 +425,9 @@ export function AddItemForm({ onSubmit, onCancel }: AddItemFormProps) {
                   onClick={handleCleanContent}
                   disabled={isCleaningContent}
                   loading={isCleaningContent}
-                  title="Clean and organize content with AI"
+                  title={hasTitle ? "Clean and organize content with AI" : "Clean content and generate title with AI"}
                 >
-                  {isCleaningContent ? 'Cleaning...' : '✨ Clean with AI'}
+                  {isCleaningContent ? 'Enhancing...' : hasTitle ? '✨ Clean with AI' : '🪄 Enhance & Title'}
                 </Button>
               </div>
             )}
@@ -417,7 +455,7 @@ export function AddItemForm({ onSubmit, onCancel }: AddItemFormProps) {
               <div className="flex items-start space-x-2">
                 <AlertTriangle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-red-800 font-semibold text-xs">AI Cleaning Failed</p>
+                  <p className="text-red-800 font-semibold text-xs">AI Enhancement Failed</p>
                   <p className="text-red-700 text-xs mt-1">{cleaningError}</p>
                 </div>
               </div>
@@ -426,7 +464,7 @@ export function AddItemForm({ onSubmit, onCancel }: AddItemFormProps) {
         </div>
       )}
 
-      {/* AI Content Cleaning Info */}
+      {/* AI Content Enhancement Info */}
       {hasContent && !isContentCleaned && (
         <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 border-2 border-blue-200">
           <div className="flex items-start space-x-3">
@@ -434,8 +472,30 @@ export function AddItemForm({ onSubmit, onCancel }: AddItemFormProps) {
             <div>
               <p className="text-blue-800 font-semibold text-sm">💡 AI Content Enhancement</p>
               <p className="text-blue-700 text-sm mt-1">
-                Click "Clean with AI" to automatically organize, format, and structure your content using AI. 
-                This will create clean Markdown with proper headers, lists, and formatting.
+                {showTitleGenerationHint 
+                  ? `Click "Enhance & Title" to automatically generate a catchy title, organize, format, and structure your content using AI.`
+                  : `Click "Clean with AI" to automatically organize, format, and structure your content using AI.`
+                } This will create clean Markdown with proper headers, lists, and formatting.
+              </p>
+              {showTitleGenerationHint && (
+                <p className="text-blue-600 text-xs mt-2 font-medium">
+                  ✨ <strong>Bonus:</strong> Since you haven't added a title yet, AI will generate a catchy one for you!
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Title generation success indicator */}
+      {isTitleGenerated && isContentCleaned && (
+        <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl p-4 border-2 border-green-200">
+          <div className="flex items-start space-x-3">
+            <Wand2 className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-green-800 font-semibold text-sm">🎉 AI Enhancement Complete!</p>
+              <p className="text-green-700 text-sm mt-1">
+                Generated a catchy title and organized your content with clean Markdown formatting. You can edit both the title and content if needed.
               </p>
             </div>
           </div>

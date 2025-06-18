@@ -396,7 +396,10 @@ export class OllamaService {
     }
   }
 
-  static async cleanAndOrganizeContent(rawContent: string, title?: string): Promise<string> {
+  static async cleanAndOrganizeContent(
+    rawContent: string, 
+    existingTitle?: string
+  ): Promise<{ content: string; title?: string }> {
     try {
       // Check if service was previously unavailable
       if (serviceUnavailable) {
@@ -408,7 +411,9 @@ export class OllamaService {
         throw new Error('Cannot clean empty content');
       }
 
-      const systemPrompt = `You are a content organization assistant. Your task is to clean, structure, and organize text content into well-formatted Markdown.
+      const needsTitle = !existingTitle || !existingTitle.trim();
+
+      const systemPrompt = `You are a content organization assistant. Your task is to clean, structure, and organize text content into well-formatted Markdown${needsTitle ? ' and generate an appropriate title' : ''}.
 
 INSTRUCTIONS:
 1. Clean up the text by removing unnecessary whitespace, fixing formatting issues, and correcting obvious typos
@@ -418,15 +423,29 @@ INSTRUCTIONS:
 5. Use proper Markdown syntax for formatting (headers, lists, code blocks, links, etc.)
 6. Remove redundant or irrelevant content (like navigation text, ads, etc.)
 7. Ensure the content is well-structured and easy to read
+${needsTitle ? '8. Generate a catchy, descriptive title that summarizes the main topic' : ''}
 
-IMPORTANT: 
+${needsTitle ? `RESPONSE FORMAT:
+Return a JSON object with this structure:
+{
+  "title": "A catchy, descriptive title (max 80 characters)",
+  "content": "The cleaned and organized Markdown content"
+}
+
+TITLE GUIDELINES:
+- Make it catchy and engaging
+- Keep it under 80 characters
+- Capture the main topic or theme
+- Make it suitable for a knowledge base entry
+- Avoid generic titles like "Article" or "Content"
+` : `IMPORTANT: 
 - Only return the cleaned Markdown content, no additional commentary
 - Preserve the original meaning and all important information
-- Use appropriate Markdown formatting for better readability`;
+- Use appropriate Markdown formatting for better readability`}`;
 
-      const userPrompt = title 
-        ? `Please clean and organize this content about "${title}":\n\n${rawContent}`
-        : `Please clean and organize this content:\n\n${rawContent}`;
+      const userPrompt = existingTitle 
+        ? `Please clean and organize this content about "${existingTitle}":\n\n${rawContent}`
+        : `Please clean and organize this content and generate an appropriate title:\n\n${rawContent}`;
 
       const messages: ChatMessage[] = [
         { role: 'system', content: systemPrompt },
@@ -438,41 +457,78 @@ IMPORTANT:
       const response = await ollama.chat({
         model: selectedModel,
         messages,
-        stream: false
+        stream: false,
+        ...(needsTitle ? { format: 'json' } : {})
       });
       
       // Reset service unavailable flag on successful response
       serviceUnavailable = false;
       
-      // Clean up the response (remove any extra formatting or explanations)
-      let cleanedContent = response.message.content.trim();
-      
-      // Remove common AI response prefixes/suffixes
-      const prefixesToRemove = [
-        'Here is the cleaned and organized content:',
-        'Here\'s the cleaned and organized content:',
-        'The cleaned and organized content is:',
-        'Cleaned and organized content:',
-        '```markdown',
-        '```'
-      ];
-      
-      for (const prefix of prefixesToRemove) {
-        if (cleanedContent.toLowerCase().startsWith(prefix.toLowerCase())) {
-          cleanedContent = cleanedContent.substring(prefix.length).trim();
+      let result: { content: string; title?: string };
+
+      if (needsTitle) {
+        try {
+          // Try to parse as JSON for title + content
+          const jsonResponse = JSON.parse(response.message.content);
+          
+          if (jsonResponse.title && jsonResponse.content) {
+            result = {
+              content: jsonResponse.content.trim(),
+              title: jsonResponse.title.trim()
+            };
+          } else {
+            // Fallback: treat as content only
+            console.warn('AI response missing title or content fields, using as content only');
+            result = { content: response.message.content.trim() };
+          }
+        } catch (parseError) {
+          console.warn('Failed to parse AI response as JSON, treating as content only');
+          result = { content: response.message.content.trim() };
         }
-        if (cleanedContent.toLowerCase().endsWith(prefix.toLowerCase())) {
-          cleanedContent = cleanedContent.substring(0, cleanedContent.length - prefix.length).trim();
+      } else {
+        // Clean up the response (remove any extra formatting or explanations)
+        let cleanedContent = response.message.content.trim();
+        
+        // Remove common AI response prefixes/suffixes
+        const prefixesToRemove = [
+          'Here is the cleaned and organized content:',
+          'Here\'s the cleaned and organized content:',
+          'The cleaned and organized content is:',
+          'Cleaned and organized content:',
+          '```markdown',
+          '```'
+        ];
+        
+        for (const prefix of prefixesToRemove) {
+          if (cleanedContent.toLowerCase().startsWith(prefix.toLowerCase())) {
+            cleanedContent = cleanedContent.substring(prefix.length).trim();
+          }
+          if (cleanedContent.toLowerCase().endsWith(prefix.toLowerCase())) {
+            cleanedContent = cleanedContent.substring(0, cleanedContent.length - prefix.length).trim();
+          }
         }
+        
+        result = { content: cleanedContent };
       }
       
-      // Ensure we have meaningful content
-      if (!cleanedContent || cleanedContent.length < 10) {
+      // Validate we have meaningful content
+      if (!result.content || result.content.length < 10) {
         console.warn('AI returned very short content, using original');
-        return rawContent;
+        result.content = rawContent;
+      }
+
+      // Validate title if generated
+      if (result.title) {
+        if (result.title.length > 100) {
+          result.title = result.title.substring(0, 97) + '...';
+        }
+        if (result.title.length < 3) {
+          console.warn('AI generated very short title, removing it');
+          delete result.title;
+        }
       }
       
-      return cleanedContent;
+      return result;
       
     } catch (error) {
       console.error('Content cleaning error:', error);
