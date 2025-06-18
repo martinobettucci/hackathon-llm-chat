@@ -74,13 +74,13 @@ Your task: Analyze this conversation and extract the user's complete current int
       }
     }
       
-    // // Remove quotes if they wrap the entire intent
-    // if (intent.startsWith('"') && intent.endsWith('"')) {
-    //   intent = intent.slice(1, -1).trim();
-    // }
-    // if (intent.startsWith("'") && intent.endsWith("'")) {
-    //   intent = intent.slice(1, -1).trim();
-    // }
+    // Remove quotes if they wrap the entire intent
+    if (intent.startsWith('"') && intent.endsWith('"')) {
+      intent = intent.slice(1, -1).trim(); 
+    }
+    if (intent.startsWith("'") && intent.endsWith("'")) {
+      intent = intent.slice(1, -1).trim();
+    }
     
     // Ensure we have meaningful content
     if (!intent || intent.length < 3) {
