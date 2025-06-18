@@ -26,9 +26,9 @@ export async function chat(messages: ChatMessage[], model?: string, think?: bool
     };
 
     // Add think parameter if specified
-    // if (think !== undefined) {
-    //   chatOptions.think = think;
-    // } 
+    if (think !== undefined) {
+      chatOptions.think = think;
+    } 
     
     const response = await ollama.chat(chatOptions);
     
@@ -59,7 +59,7 @@ export async function chat(messages: ChatMessage[], model?: string, think?: bool
     
     setServiceUnavailable(true);
     throw new Error('Failed to get response from AI model. Please check your connection and try again.');
-  }
+  } 
 }
 
 export async function chatStream(messages: ChatMessage[], model?: string, think?: boolean) {
@@ -82,9 +82,9 @@ export async function chatStream(messages: ChatMessage[], model?: string, think?
     };
 
     // Add think parameter if specified
-    // if (think !== undefined) {
-    //   chatOptions.think = think; 
-    // }
+    if (think !== undefined) {
+      chatOptions.think = think; 
+    }
     
     const response = await ollama.chat(chatOptions);
     
