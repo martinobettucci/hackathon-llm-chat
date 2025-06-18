@@ -23,79 +23,85 @@ export function KnowledgeBaseItemCard({
   const hasContent = item.content && item.content.trim().length > 0;
 
   return (
-    <div className="bg-white rounded-2xl border-2 border-purple-200 p-6 hover:shadow-xl transition-all duration-300 hover:border-purple-400 hover:-translate-y-1">
-      <div className="flex items-start justify-between mb-4">
-        <div className="flex items-start space-x-3 flex-1">
-          <div className="flex-shrink-0 p-2 rounded-xl bg-gradient-to-r from-purple-100 to-pink-100">
-            {item.type === 'url' && <Link className="w-5 h-5 text-blue-600" />}
-            {item.type === 'document' && <FileText className="w-5 h-5 text-green-600" />}
-            {item.type === 'text' && <FileText className="w-5 h-5 text-purple-600" />}
-          </div>
+    <div className="bg-white rounded-2xl border-2 border-purple-200 p-6 hover:shadow-xl transition-all duration-300 hover:border-purple-400 hover:-translate-y-1 flex flex-col h-full">
+      <div className="flex items-start space-x-3 mb-4 flex-1">
+        <div className="flex-shrink-0 p-2 rounded-xl bg-gradient-to-r from-purple-100 to-pink-100">
+          {item.type === 'url' && <Link className="w-5 h-5 text-blue-600" />}
+          {item.type === 'document' && <FileText className="w-5 h-5 text-green-600" />}
+          {item.type === 'text' && <FileText className="w-5 h-5 text-purple-600" />}
+        </div>
+        
+        <div className="flex-1 min-w-0 overflow-hidden">
+          <h3 className="text-lg font-bold text-gray-800 mb-2 line-clamp-2 leading-tight">
+            {item.title}
+          </h3>
           
-          <div className="flex-1 min-w-0">
-            <h3 className="text-lg font-bold text-gray-800 mb-1 line-clamp-2">
-              {item.title}
-            </h3>
-            
-            {item.type === 'url' && item.url && (
-              <p className="text-sm text-blue-600 mb-2 truncate">
+          {item.type === 'url' && item.url && (
+            <div className="mb-2 overflow-hidden">
+              <p className="text-sm text-blue-600 line-clamp-1 break-all">
                 {item.url}
               </p>
-            )}
-            
-            {item.type === 'document' && (
-              <div className="flex items-center space-x-2 text-sm text-gray-500 mb-2">
-                <span className="truncate">{item.fileName}</span>
-                {item.fileSize && <span className="flex-shrink-0">• {formatFileSize(item.fileSize)}</span>}
-              </div>
-            )}
-            
-            {item.content && (
-              <p className="text-sm text-gray-600 mt-2 line-clamp-3 leading-relaxed">
+            </div>
+          )}
+          
+          {item.type === 'document' && (
+            <div className="flex flex-col space-y-1 text-sm text-gray-500 mb-2">
+              <span className="line-clamp-1 break-all">{item.fileName}</span>
+              {item.fileSize && (
+                <span className="text-xs flex-shrink-0">📊 {formatFileSize(item.fileSize)}</span>
+              )}
+            </div>
+          )}
+          
+          {item.content && hasContent && (
+            <div className="mt-2 overflow-hidden">
+              <p className="text-sm text-gray-600 line-clamp-3 leading-relaxed break-words">
                 {item.content}
               </p>
-            )}
-            
-            <div className="flex items-center justify-between mt-3">
-              <p className="text-xs text-gray-400 font-medium">
-                📅 {item.createdAt.toLocaleDateString()}
-              </p>
-              
-              {/* Embeddings status indicator */}
-              <div className={`
-                flex items-center space-x-1 px-2 py-1 rounded-full text-xs font-medium flex-shrink-0
-                ${hasEmbeddings 
-                  ? 'bg-green-100 text-green-800' 
-                  : hasContent 
-                    ? 'bg-orange-100 text-orange-800' 
-                    : 'bg-gray-100 text-gray-600'
-                }
-              `}>
-                {hasEmbeddings && (
-                  <>
-                    <CheckCircle className="w-3 h-3" />
-                    <span>AI Ready</span>
-                  </>
-                )}
-                {!hasEmbeddings && hasContent && (
-                  <>
-                    <AlertTriangle className="w-3 h-3" />
-                    <span>No Embeddings</span>
-                  </>
-                )}
-                {!hasEmbeddings && !hasContent && (
-                  <>
-                    <AlertTriangle className="w-3 h-3" />
-                    <span>No Content</span>
-                  </>
-                )}
-              </div>
             </div>
-          </div>
+          )}
+        </div>
+      </div>
+      
+      {/* Bottom section with date and status */}
+      <div className="flex items-center justify-between mt-auto pt-3 border-t border-purple-100">
+        <p className="text-xs text-gray-400 font-medium flex-shrink-0">
+          📅 {item.createdAt.toLocaleDateString()}
+        </p>
+        
+        {/* Embeddings status indicator */}
+        <div className={`
+          flex items-center space-x-1 px-2 py-1 rounded-full text-xs font-medium flex-shrink-0
+          ${hasEmbeddings 
+            ? 'bg-green-100 text-green-800' 
+            : hasContent 
+              ? 'bg-orange-100 text-orange-800' 
+              : 'bg-gray-100 text-gray-600'
+          }
+        `}>
+          {hasEmbeddings && (
+            <>
+              <CheckCircle className="w-3 h-3 flex-shrink-0" />
+              <span className="whitespace-nowrap">AI Ready</span>
+            </>
+          )}
+          {!hasEmbeddings && hasContent && (
+            <>
+              <AlertTriangle className="w-3 h-3 flex-shrink-0" />
+              <span className="whitespace-nowrap">No Embeddings</span>
+            </>
+          )}
+          {!hasEmbeddings && !hasContent && (
+            <>
+              <AlertTriangle className="w-3 h-3 flex-shrink-0" />
+              <span className="whitespace-nowrap">No Content</span>
+            </>
+          )}
         </div>
       </div>
 
-      <div className="flex items-center justify-between pt-3 border-t border-purple-100">
+      {/* Action buttons */}
+      <div className="flex items-center justify-between pt-3 border-t border-purple-100 mt-3">
         <div className="flex items-center space-x-2">
           <Button
             variant="secondary"
