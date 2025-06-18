@@ -10,7 +10,7 @@ function App() {
   const [selectedChatId, setSelectedChatId] = useState<string>();
   const [activeView, setActiveView] = useState<'chat' | 'knowledge'>('chat');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const { createChat } = useChats();
+  const { createChat } = useChats(selectedProjectId);
 
   const handleNewChat = async () => {
     try {
