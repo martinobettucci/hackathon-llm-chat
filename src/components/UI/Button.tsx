@@ -80,7 +80,7 @@ export function Button({
         </>
       )}
       
-      <style jsx>{`
+      <style>{`
         .expand-on-hover:hover .button-text {
           max-width: 8rem;
           opacity: 1;

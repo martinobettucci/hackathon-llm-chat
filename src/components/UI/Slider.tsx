@@ -72,7 +72,7 @@ export function Slider({
         </p>
       )}
       
-      <style jsx>{`
+      <style>{`
         .slider-thumb::-webkit-slider-thumb {
           appearance: none;
           width: 24px;
