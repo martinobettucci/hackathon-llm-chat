@@ -80,6 +80,12 @@ class StrategyTaskManager {
       message: 'Extraction de l\'intention en attente...'
     },
     {
+      id: 'advanced-reasoning',
+      name: 'Raisonnement Avancé',
+      status: 'todo',
+      message: 'Évaluation du besoin de réflexion avancée...'
+    },
+    {
       id: 'retrieve',
       name: 'Récupération',
       status: 'todo',
@@ -368,9 +374,137 @@ class ToolRegistry {
   }
 }
 
+// Advanced reasoning decision function
+async function shouldActivateAdvancedReasoning(
+  history: HistoryMessageType[],
+  userIntent: string,
+  taskManager: StrategyTaskManager
+): Promise<boolean> {
+  try {
+    taskManager.updateTaskMessage('advanced-reasoning', 'Analyse des indicateurs de complexité...');
+
+    // Extract all conversation content for analysis
+    const conversationContent = history
+      .map(msg => {
+        if (msg.content.type === 'formatted') {
+          return msg.content.blocks
+            .map(block => block.type === 'markdown' ? block.text : block.code)
+            .join(' ');
+        } else if (msg.content.type === 'toolCall') {
+          return msg.content.display;
+        }
+        return '';
+      })
+      .join(' ')
+      .toLowerCase();
+
+    const fullContext = `${conversationContent} ${userIntent}`.toLowerCase();
+    
+    // Keywords indicating complex reasoning needs
+    const complexityKeywords = [
+      // Mathematics and calculations
+      'calcul', 'math', 'équation', 'algorithme', 'formule', 'démonstration',
+      'preuve', 'théorème', 'intégrale', 'dérivée', 'statistique', 'probabilité',
+      
+      // Programming and debugging
+      'code', 'programme', 'debug', 'erreur', 'bug', 'algorithme', 'logique',
+      'optimisation', 'performance', 'architecture', 'design pattern',
+      
+      // Complex analysis
+      'analyse', 'réflexion', 'raisonnement', 'complexe', 'difficile',
+      'logique', 'stratégie', 'solution', 'problème', 'résoudre',
+      
+      // Scientific reasoning
+      'recherche', 'hypothèse', 'méthodologie', 'comparaison', 'évaluation'
+    ];
+
+    // Frustration indicators
+    const frustrationKeywords = [
+      'bête', 'idiot', 'stupide', 'nul', 'mauvais', 'incompétent',
+      'réfléchis', 'reflechis', 'pense', 'regarde mieux', 'écoute moi bien',
+      'écoute-moi bien', 'attention', 'concentre', 'focus',
+      'encore', 'toujours', 'jamais', 'arrête', 'stop',
+      'frustré', 'énervé', 'agacé', 'en colère', 'fâché'
+    ];
+
+    // Repetition/confusion indicators
+    const repetitionKeywords = [
+      'répète', 'encore une fois', 'redis', 'redites', 'expliquez encore',
+      'je ne comprends pas', 'comprends pas', 'confus', 'perdu',
+      'tourne en rond', 'circle', 'même chose', 'pareil'
+    ];
+
+    // Count occurrences
+    let complexityScore = 0;
+    let frustrationScore = 0;
+    let repetitionScore = 0;
+
+    complexityKeywords.forEach(keyword => {
+      const matches = (fullContext.match(new RegExp(keyword, 'g')) || []).length;
+      complexityScore += matches;
+    });
+
+    frustrationKeywords.forEach(keyword => {
+      const matches = (fullContext.match(new RegExp(keyword, 'g')) || []).length;
+      frustrationScore += matches * 2; // Frustration is a strong indicator
+    });
+
+    repetitionKeywords.forEach(keyword => {
+      const matches = (fullContext.match(new RegExp(keyword, 'g')) || []).length;
+      repetitionScore += matches * 1.5; // Repetition is a moderate indicator
+    });
+
+    // Check conversation length - longer conversations might benefit from thinking
+    const conversationLength = history.length;
+    const longConversationBonus = conversationLength > 10 ? 1 : 0;
+
+    // Check for back-and-forth patterns (potential confusion)
+    const userMessages = history.filter(msg => msg.actor === 'user');
+    const backAndForthBonus = userMessages.length > 3 ? 1 : 0;
+
+    const totalScore = complexityScore + frustrationScore + repetitionScore + longConversationBonus + backAndForthBonus;
+    
+    // Decision threshold - activate thinking if score >= 2
+    const shouldActivate = totalScore >= 2;
+
+    // Log decision details for debugging
+    console.log('Advanced reasoning decision:', {
+      complexityScore,
+      frustrationScore,
+      repetitionScore,
+      longConversationBonus,
+      backAndForthBonus,
+      totalScore,
+      shouldActivate,
+      userIntent: userIntent.substring(0, 100)
+    });
+
+    const reasoningDetails = [];
+    if (complexityScore > 0) reasoningDetails.push(`complexité: ${complexityScore}`);
+    if (frustrationScore > 0) reasoningDetails.push(`frustration: ${frustrationScore}`);
+    if (repetitionScore > 0) reasoningDetails.push(`répétition: ${repetitionScore}`);
+    if (longConversationBonus > 0) reasoningDetails.push('conversation longue');
+    if (backAndForthBonus > 0) reasoningDetails.push('échanges multiples');
+
+    if (shouldActivate) {
+      taskManager.completeTask('advanced-reasoning', `Activé (score: ${totalScore} - ${reasoningDetails.join(', ')})`);
+    } else {
+      taskManager.completeTask('advanced-reasoning', `Non nécessaire (score: ${totalScore})`);
+    }
+
+    return shouldActivate;
+
+  } catch (error) {
+    console.error('Error in advanced reasoning analysis:', error);
+    taskManager.errorTask('advanced-reasoning', 'Erreur d\'analyse');
+    return false; // Default to no advanced reasoning on error
+  }
+}
+
 async function attemptLLMCall(
   messagesWithSystem: Array<{role: 'user' | 'assistant' | 'system', content: string}>,
   taskManager: StrategyTaskManager,
+  activateThinkMode: boolean = false,
   attemptNumber: number = 1
 ): Promise<{response: z.infer<typeof StrategyRunOutput>, rawResponse: string}> {
   const maxRetries = 3;
@@ -386,17 +520,21 @@ async function attemptLLMCall(
       }
 
       // Start generation task
-      taskManager.startTask('generate', attempt === 1 ? 'Génération en cours...' : `Tentative ${attempt}/${maxRetries}`);
+      const generationMessage = attempt === 1 
+        ? (activateThinkMode ? 'Génération avec réflexion avancée...' : 'Génération en cours...')
+        : `Tentative ${attempt}/${maxRetries}`;
+      
+      taskManager.startTask('generate', generationMessage);
 
       let fullResponse = '';
       let lastUpdateTime = Date.now();
       
       try {
         // Try streaming first
-        const stream = await OllamaService.chatStream(messagesWithSystem);
+        const stream = await OllamaService.chatStream(messagesWithSystem, undefined, activateThinkMode);
         
         // Start streaming analysis
-        taskManager.updateTaskMessage('generate', 'Analyse du streaming...');
+        taskManager.updateTaskMessage('generate', activateThinkMode ? 'Analyse du streaming avec réflexion...' : 'Analyse du streaming...');
         analyzer.reset();
         
         for await (const part of stream) {
@@ -421,7 +559,7 @@ async function attemptLLMCall(
         // Fallback to non-streaming approach
         taskManager.updateTaskMessage('generate', 'Streaming échoué, mode direct...');
         
-        fullResponse = await OllamaService.chat(messagesWithSystem);
+        fullResponse = await OllamaService.chat(messagesWithSystem, undefined, activateThinkMode);
         
         // Still analyze the full response for feedback
         analyzer.reset();
@@ -429,7 +567,7 @@ async function attemptLLMCall(
       }
 
       // Complete generation task
-      taskManager.completeTask('generate', 'Réponse reçue');
+      taskManager.completeTask('generate', activateThinkMode ? 'Réponse avec réflexion reçue' : 'Réponse reçue');
 
       // Start validation task
       taskManager.startTask('validate', 'Validation JSON...');
@@ -712,7 +850,16 @@ export async function runStrategy(
       taskManager.completeTask('user-intent', 'Message actuel utilisé');
     }
 
-    // Task 3: Retrieve relevant documents from knowledge base using extracted intent
+    // Task 3: Advanced reasoning decision
+    taskManager.startTask('advanced-reasoning', 'Évaluation du besoin de réflexion avancée...');
+    
+    const activateThinkMode = await shouldActivateAdvancedReasoning(
+      history,
+      extractedUserIntent,
+      taskManager
+    );
+
+    // Task 4: Retrieve relevant documents from knowledge base using extracted intent
     let augmentedContext = '';
     let ragAgentMessage: HistoryMessageType | null = null;
 
@@ -760,7 +907,7 @@ export async function runStrategy(
       }
     }
 
-    // Task 4: Analyze request
+    // Task 5: Analyze request
     taskManager.startTask('analyze', 'Analyse de la requête...');
 
     // Build system prompt for structured output
@@ -845,11 +992,15 @@ Use this contextual information to provide a more informed, accurate, and person
 
     taskManager.completeTask('analyze', 'Requête analysée');
 
-    // Tasks 5-7: Will be managed by the LLM call with live streaming analysis
+    // Tasks 6-8: Will be managed by the LLM call with live streaming analysis
     taskManager.startTask('identify-actor', 'Identification en cours...');
 
-    // Attempt LLM call with live streaming analysis and retries
-    const { response: parsedResponse, rawResponse } = await attemptLLMCall(messagesWithSystem, taskManager);
+    // Attempt LLM call with live streaming analysis, retries, and advanced reasoning
+    const { response: parsedResponse, rawResponse } = await attemptLLMCall(
+      messagesWithSystem, 
+      taskManager, 
+      activateThinkMode
+    );
 
     // Handle tool calls
     if (parsedResponse.content.type === 'toolCall') {
@@ -867,17 +1018,25 @@ Use this contextual information to provide a more informed, accurate, and person
       };
     }
 
-    // If we have a RAG agent message, we need to handle it differently
-    // In a real implementation, we would return the agent message first, then the LLM response
-    // For now, we'll return the LLM response and let the calling code handle the agent message separately
-    
-    const llmResponse: HistoryMessageType = {
+    // Create the LLM response
+    let llmResponse: HistoryMessageType = {
       id: crypto.randomUUID(),
       actor: parsedResponse.actor,
       content: parsedResponse.content,
       timestamp: new Date(),
       chatId: history[history.length - 1]?.chatId || ''
     };
+
+    // Add subtle notification if advanced reasoning was activated
+    if (activateThinkMode && parsedResponse.content.type === 'formatted') {
+      const thinkingNotification: MarkdownBlockType = {
+        type: 'markdown',
+        text: '_🧠 Mode de réflexion avancé activé._'
+      };
+      
+      // Add the notification as the last block
+      llmResponse.content.blocks.push(thinkingNotification);
+    }
 
     // Store the RAG agent message for the calling code to handle
     if (ragAgentMessage) {

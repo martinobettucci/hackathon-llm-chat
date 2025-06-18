@@ -397,7 +397,7 @@ Your task: Analyze this conversation and extract the user's complete current int
     }
   }
 
-  static async chat(messages: ChatMessage[], model?: string): Promise<string> {
+  static async chat(messages: ChatMessage[], model?: string, think?: boolean): Promise<string> {
     try {
       // Check if service was previously unavailable
       if (serviceUnavailable) {
@@ -414,12 +414,19 @@ Your task: Analyze this conversation and extract the user's complete current int
         content: msg.content
       }));
       
-      const response = await ollama.chat({
+      const chatOptions: any = {
         model: selectedModel,
         messages: validMessages,
         stream: false,
         format: 'json' // Request JSON format for structured output
-      });
+      };
+
+      // Add think parameter if specified
+      if (think !== undefined) {
+        chatOptions.think = think;
+      }
+      
+      const response = await ollama.chat(chatOptions);
       
       // Reset service unavailable flag on successful response
       serviceUnavailable = false;
@@ -459,7 +466,7 @@ Your task: Analyze this conversation and extract the user's complete current int
     }
   }
 
-  static async chatStream(messages: ChatMessage[], model?: string) {
+  static async chatStream(messages: ChatMessage[], model?: string, think?: boolean) {
     try {
       // Check if service was previously unavailable
       if (serviceUnavailable) {
@@ -476,12 +483,19 @@ Your task: Analyze this conversation and extract the user's complete current int
         content: msg.content
       }));
       
-      const response = await ollama.chat({
+      const chatOptions: any = {
         model: selectedModel,
         messages: validMessages,
         stream: true,
         format: 'json' // Request JSON format for structured output
-      });
+      };
+
+      // Add think parameter if specified
+      if (think !== undefined) {
+        chatOptions.think = think;
+      }
+      
+      const response = await ollama.chat(chatOptions);
       
       // Reset service unavailable flag on successful response
       serviceUnavailable = false;
@@ -579,12 +593,17 @@ TITLE GUIDELINES:
 
       const selectedModel = await this.getAvailableModel();
       
-      const response = await ollama.chat({
+      const chatOptions: any = {
         model: selectedModel,
         messages,
-        stream: false,
-        ...(needsTitle ? { format: 'json' } : {})
-      });
+        stream: false
+      };
+
+      if (needsTitle) {
+        chatOptions.format = 'json';
+      }
+      
+      const response = await ollama.chat(chatOptions);
       
       // Reset service unavailable flag on successful response
       serviceUnavailable = false;
