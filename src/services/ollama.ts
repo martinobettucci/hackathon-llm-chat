@@ -17,7 +17,7 @@ export interface ChatMessage {
 
 // Preferred models in order of preference for generation
 const PREFERRED_MODELS = [
-  'gemma3:27b-it-qat'
+  'magistral'
 ];
 
 // Embedding model for knowledge base
