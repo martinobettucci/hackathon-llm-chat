@@ -87,11 +87,12 @@ export function ChatInterface({ chatId, projectId }: ChatInterfaceProps) {
       // Prepare history for strategy
       const currentHistory = [...messages, newUserMessage];
 
-      // Run strategy with status updates
+      // Run strategy with status updates and pass the correct project ID
       const strategyResponse = await runStrategy(
         currentHistory, 
         [], 
-        handleStrategyStatusUpdate
+        handleStrategyStatusUpdate,
+        projectId // Pass the actual project ID instead of hardcoded 'default'
       );
 
       // Check if there's a RAG agent message to add first

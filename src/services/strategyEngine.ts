@@ -589,11 +589,16 @@ async function retrieveRelevantDocuments(
     const parentItems = await db.knowledgeBase.where('id').anyOf(parentItemIds).toArray();
     const parentItemsMap = new Map(parentItems.map(item => [item.id, item]));
 
-    // Create context information
+    // Create enhanced context information with document titles
+    const documentTitles = [...new Set(relevantChunks.map(rc => {
+      const parentItem = parentItemsMap.get(rc.chunk.itemId);
+      return parentItem?.title || 'Document sans titre';
+    }))];
+    
     const uniqueDocuments = parentItemIds.length;
-    const contextInfo = `Contexte augmenté avec ${relevantChunks.length} chunk${relevantChunks.length > 1 ? 's' : ''} de ${uniqueDocuments} document${uniqueDocuments > 1 ? 's' : ''} (seuil: ${similarityThreshold.toFixed(2)})`;
+    const contextInfo = `Contexte augmenté avec ${relevantChunks.length} section${relevantChunks.length > 1 ? 's' : ''} de ${uniqueDocuments} document${uniqueDocuments > 1 ? 's' : ''}: ${documentTitles.slice(0, 3).join(', ')}${documentTitles.length > 3 ? '...' : ''}`;
 
-    taskManager.completeTask('retrieve', `${relevantChunks.length} chunk(s) pertinent(s) trouvé(s)`);
+    taskManager.completeTask('retrieve', `${relevantChunks.length} section(s) pertinente(s) trouvée(s)`);
 
     // Return relevant chunks with their content and parent item metadata
     return {
@@ -625,7 +630,8 @@ async function retrieveRelevantDocuments(
 export async function runStrategy(
   history: HistoryMessageType[],
   context: AttachmentType[] = [],
-  onStatusUpdate?: StrategyStatusCallback
+  onStatusUpdate?: StrategyStatusCallback,
+  projectId?: string
 ): Promise<HistoryMessageType> {
   const taskManager = new StrategyTaskManager(onStatusUpdate);
 
@@ -648,33 +654,38 @@ export async function runStrategy(
     let augmentedContext = '';
     let ragAgentMessage: HistoryMessageType | null = null;
 
-    if (lastUserMessage && lastUserMessage.content.type === 'formatted') {
+    if (lastUserMessage && lastUserMessage.content.type === 'formatted' && projectId) {
       const userQuery = lastUserMessage.content.blocks
         .map(block => block.type === 'markdown' ? block.text : block.code)
         .join(' ');
 
-      const projectId = lastUserMessage.chatId; // We'll use chatId to get the project, or use a default
-      
       const { documents, contextInfo } = await retrieveRelevantDocuments(
         userQuery,
-        'default', // For now, use default project - could be enhanced to get actual project
+        projectId,
         taskManager
       );
 
       if (documents.length > 0) {
-        // Create augmented context for the LLM using chunks
+        // Create augmented context for the LLM using chunks with hierarchical headers
         augmentedContext = documents.map(doc => {
           let chunkContext = `## ${doc.title}\n${doc.content}\n`;
           
           // Add parent document context if different from chunk title
           if (doc.parentDocumentTitle && doc.parentDocumentTitle !== doc.title) {
-            chunkContext = `### From: ${doc.parentDocumentTitle} (Chapter ${doc.chunkOrder + 1})\n${chunkContext}`;
+            chunkContext = `### Provenance: ${doc.parentDocumentTitle} (Section ${doc.chunkOrder + 1})\n${chunkContext}`;
           }
           
           return chunkContext;
         }).join('\n');
 
-        // Create agent message to inform the user about context augmentation
+        // Create enhanced agent message to inform the user about context augmentation
+        const documentList = documents.map(doc => {
+          if (doc.parentDocumentTitle && doc.parentDocumentTitle !== doc.title) {
+            return `• **${doc.title}** (de "${doc.parentDocumentTitle}")`;
+          }
+          return `• **${doc.title}**`;
+        }).join('\n');
+
         ragAgentMessage = {
           id: crypto.randomUUID(),
           actor: 'agent',
@@ -682,7 +693,7 @@ export async function runStrategy(
             type: 'formatted',
             blocks: [{
               type: 'markdown',
-              text: `🔍 **${contextInfo}**\n\nJ'ai trouvé des sections pertinentes dans votre base de connaissances pour enrichir ma réponse. Ces informations contextuelles m'aideront à vous fournir une réponse plus précise et personnalisée basée sur vos documents.`
+              text: `🔍 **${contextInfo}**\n\nSections trouvées:\n${documentList}\n\nJ'ai trouvé des sections pertinentes dans votre base de connaissances pour enrichir ma réponse. Ces informations contextuelles, incluant leurs chapitres hiérarchiques, m'aideront à vous fournir une réponse plus précise et personnalisée basée sur vos documents.`
             } as MarkdownBlockType]
           },
           timestamp: new Date(),
@@ -741,11 +752,11 @@ export async function runStrategy(
       systemPrompt += `
 
 ADDITIONAL CONTEXT FROM KNOWLEDGE BASE:
-The following information has been retrieved from the user's knowledge base and is highly relevant to their query. Use this context to inform your response, but integrate it naturally without explicitly mentioning that you're using external context unless specifically asked:
+The following information has been retrieved from the user's knowledge base and is highly relevant to their query. Each section includes its hierarchical context (titles, chapters, etc.) for better understanding. Use this context to inform your response, but integrate it naturally without explicitly mentioning that you're using external context unless specifically asked:
 
 ${augmentedContext}
 
-Use this contextual information to provide a more informed, accurate, and personalized response. Prioritize information from the knowledge base when it's relevant to the user's question.`;
+Use this contextual information to provide a more informed, accurate, and personalized response. When referencing information from the knowledge base, you can naturally mention the source chapter or document if it helps provide context. Prioritize information from the knowledge base when it's relevant to the user's question.`;
     }
 
     // Convert history to chat messages for Ollama (including agent messages)
@@ -763,7 +774,7 @@ Use this contextual information to provide a more informed, accurate, and person
         }
         
         return {
-          role: msg.actor === 'llm' ? 'assistant' as const : 'user' as const,
+          role: msg.actor === 'llm' ? 'assistant' as const : msg.actor === 'agent' ? 'assistant' as const : 'user' as const,
           content
         };
       });

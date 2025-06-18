@@ -1,8 +1,8 @@
 import { KnowledgeBaseChunk } from '../types';
 
 /**
- * Splits markdown content into logical chunks based on headers
- * Each chunk represents a chapter or section with its content
+ * Splits markdown content into logical chunks based on headers with hierarchical context
+ * Each chunk includes all preceding hierarchical headers but only the content of its own section
  */
 export function splitMarkdownIntoChunks(
   markdownContent: string,
@@ -16,6 +16,9 @@ export function splitMarkdownIntoChunks(
   const chunks: Omit<KnowledgeBaseChunk, 'id' | 'createdAt' | 'updatedAt' | 'embeddings'>[] = [];
   const lines = markdownContent.split('\n');
   
+  // Track hierarchical headers stack
+  const headerStack: Array<{ level: number; text: string; line: string }> = [];
+  
   let currentChunk: {
     title?: string;
     content: string[];
@@ -26,13 +29,16 @@ export function splitMarkdownIntoChunks(
 
   const finishCurrentChunk = () => {
     if (currentChunk && currentChunk.content.length > 0) {
-      const content = currentChunk.content.join('\n').trim();
-      if (content) {
+      // Prepend hierarchical headers to chunk content
+      const hierarchicalHeaders = headerStack.map(header => header.line);
+      const fullContent = [...hierarchicalHeaders, ...currentChunk.content].join('\n').trim();
+      
+      if (fullContent) {
         chunks.push({
           itemId,
           projectId,
           title: currentChunk.title,
-          content,
+          content: fullContent,
           order: chunkOrder++
         });
       }
@@ -43,27 +49,51 @@ export function splitMarkdownIntoChunks(
     const line = lines[i];
     const trimmedLine = line.trim();
     
-    // Check if this line is a header (## or ###, but not # to avoid splitting on main title)
-    const headerMatch = trimmedLine.match(/^(#{2,6})\s+(.+)$/);
+    // Check if this line is a header
+    const headerMatch = trimmedLine.match(/^(#{1,6})\s+(.+)$/);
     
     if (headerMatch) {
-      // Finish the current chunk before starting a new one
-      finishCurrentChunk();
-      
-      // Start a new chunk
       const headerLevel = headerMatch[1].length;
       const headerTitle = headerMatch[2].trim();
       
-      currentChunk = {
-        title: headerTitle,
-        content: [line], // Include the header in the chunk content
-        startLine: i
-      };
+      // Update header stack - remove headers of same or deeper level
+      while (headerStack.length > 0 && headerStack[headerStack.length - 1].level >= headerLevel) {
+        headerStack.pop();
+      }
+      
+      // Add current header to stack
+      headerStack.push({
+        level: headerLevel,
+        text: headerTitle,
+        line: line
+      });
+      
+      // For level 2+ headers, finish current chunk and start new one
+      if (headerLevel >= 2) {
+        finishCurrentChunk();
+        
+        currentChunk = {
+          title: headerTitle,
+          content: [line], // Include only the current header content, hierarchical headers will be prepended
+          startLine: i
+        };
+      } else {
+        // For level 1 headers (main title), add to current chunk or start new one
+        if (!currentChunk) {
+          currentChunk = {
+            title: headerTitle,
+            content: [line],
+            startLine: i
+          };
+        } else {
+          currentChunk.content.push(line);
+        }
+      }
     } else {
       // Add line to current chunk, or start first chunk if none exists
       if (!currentChunk) {
         currentChunk = {
-          title: undefined, // No title for the first chunk if it doesn't start with a header
+          title: undefined,
           content: [line],
           startLine: i
         };
@@ -90,8 +120,9 @@ export function splitMarkdownIntoChunks(
   // Clean up chunks - remove empty ones and ensure minimum content length
   return chunks.filter(chunk => {
     const cleanContent = chunk.content.trim();
-    // Only keep chunks with meaningful content (more than just a header)
-    return cleanContent.length > 10;
+    // Only keep chunks with meaningful content (more than just headers)
+    const contentWithoutHeaders = cleanContent.replace(/^#{1,6}\s+.+$/gm, '').trim();
+    return contentWithoutHeaders.length > 10;
   });
 }
 
