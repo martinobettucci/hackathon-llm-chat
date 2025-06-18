@@ -4,7 +4,7 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install
 COPY . .
-ARG BASE_PATH=/
+ARG BASE_PATH=/chat/
 ENV BASE_PATH=$BASE_PATH
 RUN npm run build
 
