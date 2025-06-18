@@ -64,6 +64,46 @@ function cosineSimilarity(a: number[], b: number[]): number {
   return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
+// Function to extract JSON content from response
+function extractJSONFromResponse(response: string): string {
+  if (!response || typeof response !== 'string') {
+    throw new Error('Invalid response: empty or not a string');
+  }
+
+  // Trim whitespace
+  const trimmed = response.trim();
+  
+  // If the response already starts and ends with braces, return as-is
+  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+    return trimmed;
+  }
+  
+  // Find the first opening brace
+  const firstBraceIndex = trimmed.indexOf('{');
+  if (firstBraceIndex === -1) {
+    throw new Error('No opening brace found in response');
+  }
+  
+  // Find the last closing brace
+  const lastBraceIndex = trimmed.lastIndexOf('}');
+  if (lastBraceIndex === -1 || lastBraceIndex <= firstBraceIndex) {
+    throw new Error('No valid closing brace found in response');
+  }
+  
+  // Extract the JSON portion
+  const jsonContent = trimmed.substring(firstBraceIndex, lastBraceIndex + 1);
+  
+  // Basic validation: ensure we have matching braces
+  const openBraces = (jsonContent.match(/{/g) || []).length;
+  const closeBraces = (jsonContent.match(/}/g) || []).length;
+  
+  if (openBraces !== closeBraces) {
+    throw new Error(`Mismatched braces: ${openBraces} opening, ${closeBraces} closing`);
+  }
+  
+  return jsonContent;
+}
+
 // Task manager for strategy execution
 class StrategyTaskManager {
   private tasks: StrategyTask[] = [
@@ -570,11 +610,41 @@ async function attemptLLMCall(
       taskManager.completeTask('generate', activateThinkMode ? 'Réponse avec réflexion reçue' : 'Réponse reçue');
 
       // Start validation task
-      taskManager.startTask('validate', 'Validation JSON...');
+      taskManager.startTask('validate', 'Extraction JSON...');
 
-      // Try to parse the complete response
+      // Extract JSON content from the response
+      let jsonContent: string;
       try {
-        const jsonResponse = JSON.parse(fullResponse);
+        jsonContent = extractJSONFromResponse(fullResponse);
+        taskManager.updateTaskMessage('validate', 'JSON extrait, validation...');
+      } catch (extractError) {
+        const errorMessage = extractError instanceof Error ? extractError.message : 'Erreur d\'extraction JSON inconnue';
+        
+        // Record this failed attempt
+        retryAttempts.push({
+          attempt,
+          rawResponse: fullResponse,
+          error: `JSON extraction failed: ${errorMessage}`
+        });
+
+        console.error(`JSON extraction error on attempt ${attempt}:`, extractError);
+        console.log(`Raw response attempt ${attempt}:`, fullResponse.substring(0, 500) + '...');
+
+        // Mark validation as error
+        taskManager.errorTask('validate', `Extraction JSON échouée (${attempt}/${maxRetries})`);
+
+        // If this was the last attempt, throw with all attempt details
+        if (attempt === maxRetries) {
+          throw new ValidationError('JSON extraction failed after all retries', retryAttempts);
+        }
+        
+        // Continue to next retry attempt
+        continue;
+      }
+
+      // Try to parse the extracted JSON content
+      try {
+        const jsonResponse = JSON.parse(jsonContent);
         const parsedResponse = StrategyRunOutput.parse(jsonResponse);
         
         // Success! Complete validation
@@ -589,11 +659,12 @@ async function attemptLLMCall(
         retryAttempts.push({
           attempt,
           rawResponse: fullResponse,
-          error: errorMessage
+          error: `JSON parsing/validation failed: ${errorMessage}`
         });
 
         console.error(`Parse/validation error on attempt ${attempt}:`, parseError);
-        console.log(`Raw response attempt ${attempt}:`, fullResponse);
+        console.log(`Extracted JSON attempt ${attempt}:`, jsonContent.substring(0, 500) + '...');
+        console.log(`Full raw response attempt ${attempt}:`, fullResponse.substring(0, 500) + '...');
 
         // Mark validation as error
         taskManager.errorTask('validate', `Validation échouée (${attempt}/${maxRetries})`);
