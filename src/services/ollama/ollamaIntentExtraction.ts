@@ -73,7 +73,7 @@ Your task: Analyze this conversation and extract the user's complete current int
         break;
       }
     }
-     
+      
     // // Remove quotes if they wrap the entire intent
     // if (intent.startsWith('"') && intent.endsWith('"')) {
     //   intent = intent.slice(1, -1).trim();
