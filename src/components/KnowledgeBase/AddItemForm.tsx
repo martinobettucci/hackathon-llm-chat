@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link, FileText, Download, AlertTriangle, Sparkles, CheckCircle, Wand2 } from 'lucide-react';
+import { Link, FileText, Download, AlertTriangle, Sparkles, CheckCircle, Wand2, Loader2 } from 'lucide-react';
 import { Button } from '../UI/Button';
 import { Input } from '../UI/Input';
 import { OllamaService } from '../../services/ollama';
