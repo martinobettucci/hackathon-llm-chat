@@ -325,7 +325,8 @@ Your task: Analyze this conversation and extract the user's complete current int
       const response = await ollama.chat({
         model: selectedModel,
         messages,
-        stream: false
+        stream: false,
+        think: true               // Active le "thinking"
       });
       
       // Reset service unavailable flag on successful response
