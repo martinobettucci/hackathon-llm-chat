@@ -1,4 +1,5 @@
-import { OllamaService } from '../ollama';
+import { getAvailableIntermediateModel } from '../ollama/ollamaModels';
+import { chat } from '../ollama/ollamaChat';
 import { StrategyTaskManager } from './strategyTaskManager';
 
 interface ReasoningIndicators {
@@ -89,7 +90,7 @@ async function decideAdvancedReasoningWithLLM(
   taskManager: StrategyTaskManager
 ): Promise<boolean> {
   try {
-  taskManager.updateTaskMessage('advanced-reasoning', 'Consultation du modèle pour la décision...');
+    taskManager.updateTaskMessage('advanced-reasoning', 'Consultation du modèle léger pour la décision...');
 
     // Build system prompt for the reasoning evaluator
     const systemPrompt = `You are a reasoning evaluator. Your job is to determine whether a complex AI reasoning mode (thinking mode) should be activated for a user's query.
@@ -114,9 +115,9 @@ You MUST respond with valid JSON in this exact format:
   "reason": "Brief explanation of your decision (max 100 characters)"
 }
 
-Consider the conversation context, user intent, and indicators to make your decision.`;
+Consider the user intent and indicators to make your decision.`;
 
-  const userPrompt = `EXTRACTED USER INTENT: "${userIntent}"
+    const userPrompt = `EXTRACTED USER INTENT: "${userIntent}"
 
 ANALYSIS SUMMARY:
   - Total complexity indicators: ${indicators.totalScore}
@@ -129,8 +130,9 @@ Should thinking mode be activated for this user query?`;
       { role: 'user' as const, content: userPrompt }
     ];
 
-    // Call the LLM to make the decision (without think mode to avoid recursion)
-    const response = await OllamaService.chat(messages, undefined, false);
+    // Use lightweight intermediate model for reasoning decision (no thinking mode to avoid recursion)
+    const intermediateModel = await getAvailableIntermediateModel();
+    const response = await chat(messages, intermediateModel, false);
 
     taskManager.updateTaskMessage('advanced-reasoning', 'Analyse de la décision du modèle...');
 
@@ -165,6 +167,7 @@ Should thinking mode be activated for this user query?`;
     // Log the LLM decision details
     console.log('🤖 [ADVANCED-REASONING] LLM Decision Report:');
     console.log(`   🎯 User Intent: "${userIntent}"`);
+    console.log(`   🔧 Model Used: ${intermediateModel}`);
     console.log(`   📊 Calculated Indicators:`);
     console.log(`      - Complexity: ${indicators.complexityScore}`);
     console.log(`      - Frustration: ${indicators.frustrationScore}`);
@@ -214,7 +217,7 @@ export async function shouldActivateAdvancedReasoning(
     }
 
     // Step 3: Above threshold - consult LLM for final decision
-    taskManager.updateTaskMessage('advanced-reasoning', 'Seuil atteint, consultation du modèle...');
+    taskManager.updateTaskMessage('advanced-reasoning', 'Seuil atteint, consultation du modèle léger...');
     
     const llmDecision = await decideAdvancedReasoningWithLLM(
       userIntent,
@@ -229,9 +232,9 @@ export async function shouldActivateAdvancedReasoning(
     if (indicators.repetitionScore > 0) reasoningDetails.push(`répétition: ${indicators.repetitionScore}`);
 
     if (llmDecision) {
-      taskManager.completeTask('advanced-reasoning', `Activé par LLM (score: ${indicators.totalScore} - ${reasoningDetails.join(', ')})`);
+      taskManager.completeTask('advanced-reasoning', `Activé par LLM léger (score: ${indicators.totalScore} - ${reasoningDetails.join(', ')})`);
     } else {
-      taskManager.completeTask('advanced-reasoning', `Refusé par LLM (score: ${indicators.totalScore} - ${reasoningDetails.join(', ')})`);
+      taskManager.completeTask('advanced-reasoning', `Refusé par LLM léger (score: ${indicators.totalScore} - ${reasoningDetails.join(', ')})`);
     }
 
     return llmDecision;

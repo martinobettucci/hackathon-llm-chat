@@ -2,6 +2,7 @@ import { ollama } from './ollamaClient';
 
 const OLLAMA_GENERATION_MODEL_KEY = 'ollama_selected_generation_model';
 const OLLAMA_EMBEDDING_MODEL_KEY = 'ollama_selected_embedding_model';
+const OLLAMA_INTERMEDIATE_MODEL_KEY = 'ollama_selected_intermediate_model';
 
 // Preferred models in order of preference for generation
 const PREFERRED_MODELS = [
@@ -10,6 +11,9 @@ const PREFERRED_MODELS = [
 
 // Embedding model for knowledge base
 const EMBEDDING_MODEL = 'nomic-embed-text';
+
+// Lightweight model for intermediate steps (intent extraction, reasoning decisions)
+const INTERMEDIATE_MODEL = 'gemma2:2b';
 
 let cachedAvailableModel: string | null = null;
 let serviceUnavailable = false;
@@ -81,6 +85,39 @@ export function isUsingDefaultEmbeddingModel(): boolean {
 
 export function getDefaultEmbeddingModel(): string {
   return EMBEDDING_MODEL;
+}
+
+// Intermediate model functions (NEW)
+export function getSelectedIntermediateModel(): string | null {
+  try {
+    return localStorage.getItem(OLLAMA_INTERMEDIATE_MODEL_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setSelectedIntermediateModel(model: string): void {
+  try {
+    localStorage.setItem(OLLAMA_INTERMEDIATE_MODEL_KEY, model);
+  } catch (error) {
+    console.error('Error setting selected intermediate model:', error);
+  }
+}
+
+export function clearSelectedIntermediateModel(): void {
+  try {
+    localStorage.removeItem(OLLAMA_INTERMEDIATE_MODEL_KEY);
+  } catch (error) {
+    console.error('Error clearing selected intermediate model:', error);
+  }
+}
+
+export function isUsingDefaultIntermediateModel(): boolean {
+  return !getSelectedIntermediateModel();
+}
+
+export function getDefaultIntermediateModel(): string {
+  return INTERMEDIATE_MODEL;
 }
 
 export async function getAvailableModel(): Promise<string> {
@@ -167,6 +204,32 @@ export async function getAvailableEmbeddingModel(): Promise<string> {
   return EMBEDDING_MODEL;
 }
 
+export async function getAvailableIntermediateModel(): Promise<string> {
+  // Check if user has selected a specific intermediate model
+  const selectedModel = getSelectedIntermediateModel();
+  if (selectedModel) {
+    try {
+      const models = await listModels();
+      const modelNames = models.map(m => m.name);
+      
+      const isSelectedAvailable = modelNames.some(name => 
+        name.includes(selectedModel) || name === selectedModel
+      );
+      if (isSelectedAvailable) {
+        return selectedModel;
+      } else {
+        // Selected model is no longer available, clear it and fall back to default
+        clearSelectedIntermediateModel();
+      }
+    } catch (error) {
+      console.error('Error checking selected intermediate model availability:', error);
+    }
+  }
+  
+  // Use default intermediate model
+  return INTERMEDIATE_MODEL;
+}
+
 export async function listModels() {
   try {
     const response = await ollama.list();
@@ -197,6 +260,16 @@ export async function isEmbeddingModelAvailable(): Promise<boolean> {
     const models = await listModels();
     const embeddingModel = getSelectedEmbeddingModel() || getDefaultEmbeddingModel();
     return models.some(m => m.name === embeddingModel || m.name.includes(embeddingModel));
+  } catch (error) {
+    return false;
+  }
+}
+
+export async function isIntermediateModelAvailable(): Promise<boolean> {
+  try {
+    const models = await listModels();
+    const intermediateModel = getSelectedIntermediateModel() || getDefaultIntermediateModel();
+    return models.some(m => m.name === intermediateModel || m.name.includes(intermediateModel));
   } catch (error) {
     return false;
   }

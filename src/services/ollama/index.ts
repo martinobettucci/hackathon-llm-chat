@@ -24,11 +24,18 @@ export {
   clearSelectedEmbeddingModel,
   isUsingDefaultEmbeddingModel,
   getDefaultEmbeddingModel,
+  getSelectedIntermediateModel,
+  setSelectedIntermediateModel,
+  clearSelectedIntermediateModel,
+  isUsingDefaultIntermediateModel,
+  getDefaultIntermediateModel,
   getAvailableModel,
   getAvailableEmbeddingModel,
+  getAvailableIntermediateModel,
   listModels,
   isModelAvailable,
   isEmbeddingModelAvailable,
+  isIntermediateModelAvailable,
   clearModelCache,
   isServiceUnavailable,
   resetServiceStatus
@@ -52,7 +59,11 @@ export class OllamaService {
         };
       }
 
-      const { getDefaultGenerationModel, getDefaultEmbeddingModel } = await import('./ollamaModels');
+      const { 
+        getDefaultGenerationModel, 
+        getDefaultEmbeddingModel, 
+        getDefaultIntermediateModel 
+      } = await import('./ollamaModels');
       
       // Check if default models are available
       const hasGenerationModel = modelNames.some(name => 
@@ -60,6 +71,9 @@ export class OllamaService {
       );
       const hasEmbeddingModel = modelNames.some(name => 
         name.includes(getDefaultEmbeddingModel()) || name === getDefaultEmbeddingModel()
+      );
+      const hasIntermediateModel = modelNames.some(name => 
+        name.includes(getDefaultIntermediateModel()) || name === getDefaultIntermediateModel()
       );
       
       let message = `Connected successfully! Found ${modelNames.length} model(s)`;
@@ -69,6 +83,9 @@ export class OllamaService {
       }
       if (!hasEmbeddingModel) {
         message += ` Warning: Default embedding model "${getDefaultEmbeddingModel()}" not found - knowledge base features may be limited.`;
+      }
+      if (!hasIntermediateModel) {
+        message += ` Warning: Default intermediate model "${getDefaultIntermediateModel()}" not found - will fallback to generation model for intermediate tasks.`;
       }
       
       return {
@@ -122,6 +139,11 @@ export class OllamaService {
     return getAvailableModel();
   }
 
+  static async getAvailableIntermediateModel(): Promise<string> {
+    const { getAvailableIntermediateModel } = await import('./ollamaModels');
+    return getAvailableIntermediateModel();
+  }
+
   static async listModels() {
     const { listModels } = await import('./ollamaModels');
     return listModels();
@@ -135,6 +157,11 @@ export class OllamaService {
   static async isEmbeddingModelAvailable(): Promise<boolean> {
     const { isEmbeddingModelAvailable } = await import('./ollamaModels');
     return isEmbeddingModelAvailable();
+  }
+
+  static async isIntermediateModelAvailable(): Promise<boolean> {
+    const { isIntermediateModelAvailable } = await import('./ollamaModels');
+    return isIntermediateModelAvailable();
   }
 
   static clearModelCache() {

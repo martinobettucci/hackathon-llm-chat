@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Server, TestTube, RotateCcw, CheckCircle, XCircle, Loader2, Bot, Zap, Search } from 'lucide-react';
+import { Server, TestTube, RotateCcw, CheckCircle, XCircle, Loader2, Bot, Zap, Search, Cpu } from 'lucide-react';
 import { Modal } from '../UI/Modal';
 import { Input } from '../UI/Input';
 import { Button } from '../UI/Button';
@@ -20,6 +20,11 @@ import {
   clearSelectedEmbeddingModel,
   isUsingDefaultEmbeddingModel,
   getDefaultEmbeddingModel,
+  getSelectedIntermediateModel,
+  setSelectedIntermediateModel,
+  clearSelectedIntermediateModel,
+  isUsingDefaultIntermediateModel,
+  getDefaultIntermediateModel,
   OllamaService 
 } from '../../services/ollama';
 import { 
@@ -45,9 +50,11 @@ export function OllamaSettingsModal({ isOpen, onClose }: OllamaSettingsModalProp
   const [customUrl, setCustomUrl] = useState('');
   const [selectedGenerationModelState, setSelectedGenerationModelState] = useState<string | null>(null);
   const [selectedEmbeddingModelState, setSelectedEmbeddingModelState] = useState<string | null>(null);
+  const [selectedIntermediateModelState, setSelectedIntermediateModelState] = useState<string | null>(null);
   const [similarityThreshold, setSimilarityThresholdState] = useState(0.7);
   const [availableGenerationModels, setAvailableGenerationModels] = useState<string[]>([]);
   const [availableEmbeddingModels, setAvailableEmbeddingModels] = useState<string[]>([]);
+  const [availableIntermediateModels, setAvailableIntermediateModels] = useState<string[]>([]);
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<ConnectionTestResult | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -57,16 +64,19 @@ export function OllamaSettingsModal({ isOpen, onClose }: OllamaSettingsModalProp
       const currentHost = getCurrentOllamaHost();
       const currentGenerationModel = getSelectedGenerationModel();
       const currentEmbeddingModel = getSelectedEmbeddingModel();
+      const currentIntermediateModel = getSelectedIntermediateModel();
       const currentSimilarityThreshold = getSimilarityThreshold();
       
       setCustomUrl(currentHost);
       setSelectedGenerationModelState(currentGenerationModel);
       setSelectedEmbeddingModelState(currentEmbeddingModel);
+      setSelectedIntermediateModelState(currentIntermediateModel);
       setSimilarityThresholdState(currentSimilarityThreshold);
       setTestResult(null);
       setHasUnsavedChanges(false);
       setAvailableGenerationModels([]);
       setAvailableEmbeddingModels([]);
+      setAvailableIntermediateModels([]);
     }
   }, [isOpen]);
 
@@ -77,6 +87,7 @@ export function OllamaSettingsModal({ isOpen, onClose }: OllamaSettingsModalProp
     setTestResult(null);
     setAvailableGenerationModels([]);
     setAvailableEmbeddingModels([]);
+    setAvailableIntermediateModels([]);
   };
 
   const handleSimilarityThresholdChange = (value: number) => {
@@ -91,6 +102,7 @@ export function OllamaSettingsModal({ isOpen, onClose }: OllamaSettingsModalProp
     setTestResult(null);
     setAvailableGenerationModels([]);
     setAvailableEmbeddingModels([]);
+    setAvailableIntermediateModels([]);
     
     try {
       // Temporarily set the URL for testing
@@ -101,12 +113,10 @@ export function OllamaSettingsModal({ isOpen, onClose }: OllamaSettingsModalProp
       setTestResult(result);
       
       if (result.success && result.models) {
-        // Filter models for generation (all models can potentially be used for generation)
+        // All models can be used for any purpose, but we'll show them in all three categories
         setAvailableGenerationModels(result.models);
-        
-        // Filter models for embedding (only specific embedding models or all models)
-        // For simplicity, we'll include all models but highlight the default embedding model
         setAvailableEmbeddingModels(result.models);
+        setAvailableIntermediateModels(result.models);
       }
       
       // If test failed, revert to original host
@@ -123,6 +133,7 @@ export function OllamaSettingsModal({ isOpen, onClose }: OllamaSettingsModalProp
       });
       setAvailableGenerationModels([]);
       setAvailableEmbeddingModels([]);
+      setAvailableIntermediateModels([]);
     } finally {
       setIsTesting(false);
     }
@@ -138,6 +149,11 @@ export function OllamaSettingsModal({ isOpen, onClose }: OllamaSettingsModalProp
     setSelectedEmbeddingModel(model);
   };
 
+  const handleSelectIntermediateModel = (model: string) => {
+    setSelectedIntermediateModelState(model);
+    setSelectedIntermediateModel(model);
+  };
+
   const handleResetGenerationModelToDefault = () => {
     setSelectedGenerationModelState(null);
     clearSelectedGenerationModel();
@@ -146,6 +162,11 @@ export function OllamaSettingsModal({ isOpen, onClose }: OllamaSettingsModalProp
   const handleResetEmbeddingModelToDefault = () => {
     setSelectedEmbeddingModelState(null);
     clearSelectedEmbeddingModel();
+  };
+
+  const handleResetIntermediateModelToDefault = () => {
+    setSelectedIntermediateModelState(null);
+    clearSelectedIntermediateModel();
   };
 
   const handleResetSimilarityThresholdToDefault = () => {
@@ -181,6 +202,7 @@ export function OllamaSettingsModal({ isOpen, onClose }: OllamaSettingsModalProp
     setTestResult(null);
     setAvailableGenerationModels([]);
     setAvailableEmbeddingModels([]);
+    setAvailableIntermediateModels([]);
   };
 
   const handleClose = () => {
@@ -235,6 +257,9 @@ export function OllamaSettingsModal({ isOpen, onClose }: OllamaSettingsModalProp
           </p>
           <p className="text-sm text-purple-700">
             <strong>Modèle d'embedding:</strong> {selectedEmbeddingModelState || `${getDefaultEmbeddingModel()} (par défaut)`}
+          </p>
+          <p className="text-sm text-purple-700">
+            <strong>Modèle léger:</strong> {selectedIntermediateModelState || `${getDefaultIntermediateModel()} (par défaut)`}
           </p>
           <p className="text-sm text-purple-700">
             <strong>Seuil de similarité:</strong> {similarityThreshold.toFixed(2)} {isUsingDefaultSimilarityThreshold() ? '(par défaut)' : '(personnalisé)'}
@@ -352,6 +377,9 @@ export function OllamaSettingsModal({ isOpen, onClose }: OllamaSettingsModalProp
                 <Bot className="w-5 h-5 text-blue-600" />
                 <h4 className="font-semibold text-blue-800">🤖 Modèle de Génération</h4>
               </div>
+              <div className="mb-3 text-sm text-blue-700">
+                <p>Modèle principal utilisé pour générer les réponses finales. Privilégiez un modèle puissant et précis.</p>
+              </div>
               <ModelSelector
                 availableModels={availableGenerationModels}
                 selectedModel={selectedGenerationModelState}
@@ -362,11 +390,35 @@ export function OllamaSettingsModal({ isOpen, onClose }: OllamaSettingsModalProp
               />
             </div>
 
+            {/* Intermediate Model Selector */}
+            <div className="bg-gradient-to-r from-orange-50 to-yellow-50 rounded-xl p-4 border-2 border-orange-200">
+              <div className="flex items-center space-x-2 mb-4">
+                <Cpu className="w-5 h-5 text-orange-600" />
+                <h4 className="font-semibold text-orange-800">⚡ Modèle Léger (Étapes Intermédiaires)</h4>
+              </div>
+              <div className="mb-3 text-sm text-orange-700">
+                <p><strong>Utilisé pour:</strong> Extraction d'intention, décision du mode de réflexion</p>
+                <p><strong>Avantages:</strong> Plus rapide, consomme moins de ressources pour les tâches simples</p>
+                <p><strong>Recommandation:</strong> Choisissez un modèle petit et rapide (ex: gemma2:2b, qwen2.5:3b)</p>
+              </div>
+              <ModelSelector
+                availableModels={availableIntermediateModels}
+                selectedModel={selectedIntermediateModelState}
+                onSelectModel={handleSelectIntermediateModel}
+                onResetToDefault={handleResetIntermediateModelToDefault}
+                isUsingDefault={isUsingDefaultIntermediateModel()}
+                defaultModel={getDefaultIntermediateModel()}
+              />
+            </div>
+
             {/* Embedding Model Selector */}
             <div className="bg-gradient-to-r from-green-50 to-teal-50 rounded-xl p-4 border-2 border-green-200">
               <div className="flex items-center space-x-2 mb-4">
                 <Zap className="w-5 h-5 text-green-600" />
-                <h4 className="font-semibold text-green-800">⚡ Modèle d'Embedding</h4>
+                <h4 className="font-semibold text-green-800">🔗 Modèle d'Embedding</h4>
+              </div>
+              <div className="mb-3 text-sm text-green-700">
+                <p>Modèle spécialisé pour créer des représentations vectorielles des documents et requêtes (recherche sémantique).</p>
               </div>
               <ModelSelector
                 availableModels={availableEmbeddingModels}
@@ -387,9 +439,11 @@ export function OllamaSettingsModal({ isOpen, onClose }: OllamaSettingsModalProp
             <li>• L'URL par défaut est : <code className="bg-cyan-100 px-1 rounded">{getDefaultOllamaHost()}</code></li>
             <li>• Le modèle de génération par défaut est : <code className="bg-cyan-100 px-1 rounded">{getDefaultGenerationModel()}</code></li>
             <li>• Le modèle d'embedding par défaut est : <code className="bg-cyan-100 px-1 rounded">{getDefaultEmbeddingModel()}</code></li>
+            <li>• Le modèle léger par défaut est : <code className="bg-cyan-100 px-1 rounded">{getDefaultIntermediateModel()}</code></li>
             <li>• Le seuil de similarité par défaut est : <code className="bg-cyan-100 px-1 rounded">{getDefaultSimilarityThreshold()}</code></li>
-            <li>• Le modèle de génération est utilisé pour les conversations</li>
-            <li>• Le modèle d'embedding est utilisé pour la recherche sémantique dans la base de connaissances</li>
+            <li>• <strong>Modèle de génération:</strong> Conversations principales (le plus important)</li>
+            <li>• <strong>Modèle léger:</strong> Tâches rapides (intention, décision réflexion) - économise les ressources</li>
+            <li>• <strong>Modèle d'embedding:</strong> Recherche sémantique dans la base de connaissances</li>
             <li>• Le seuil de similarité détermine quels documents sont inclus dans le contexte</li>
             <li>• Assurez-vous que votre serveur Ollama autorise les requêtes CORS</li>
             <li>• Testez toujours la connexion avant de sauvegarder</li>

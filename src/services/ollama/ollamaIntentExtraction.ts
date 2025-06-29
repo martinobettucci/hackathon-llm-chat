@@ -1,5 +1,5 @@
 import { getCurrentOllamaHost } from './ollamaClient';
-import { getAvailableModel, setServiceUnavailable } from './ollamaModels';
+import { getAvailableIntermediateModel, setServiceUnavailable } from './ollamaModels';
 import { chat, ChatMessage } from './ollamaChat';
 
 export async function extractUserIntent(conversationHistory: ChatMessage[]): Promise<string> {
@@ -45,13 +45,14 @@ Your task: Analyze this conversation and extract the user's complete current int
       { role: 'user', content: userPrompt }
     ];
 
-    const selectedModel = await getAvailableModel();
+    // Use lightweight intermediate model for intent extraction
+    const intermediateModel = await getAvailableIntermediateModel();
     
-    // Use centralized chat function instead of direct ollama.chat call
-    const responseContent = await chat(messages, selectedModel, true);
+    // Use centralized chat function with intermediate model (no thinking mode for intermediate tasks)
+    const responseContent = await chat(messages, intermediateModel, false);
 
     // debug
-    console.log(JSON.stringify(responseContent))
+    console.log('[INTENT-EXTRACTION] Response:', JSON.stringify(responseContent))
     
     // Reset service unavailable flag on successful response
     setServiceUnavailable(false);
@@ -87,6 +88,9 @@ Your task: Analyze this conversation and extract the user's complete current int
       const lastUserMessage = [...conversationHistory].reverse().find(msg => msg.role === 'user');
       return lastUserMessage?.content || 'User query';
     }
+    
+    console.log(`[INTENT-EXTRACTION] Used model: ${intermediateModel}`);
+    console.log(`[INTENT-EXTRACTION] Extracted intent: "${intent}"`);
     
     return intent;
     
